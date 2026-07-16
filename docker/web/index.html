@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Marketing Agent — Control Plane</title>
+  <style>
+    :root { font-family: system-ui, sans-serif; background: #0f1419; color: #e7e9ea; }
+    body { max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.5; }
+    h1 { font-size: 1.5rem; }
+    .pill { display: inline-block; background: #1d3a2a; color: #8fd4a8; padding: 0.2rem 0.6rem; border-radius: 4px; font-size: 0.85rem; }
+    ul { color: #aab8c2; }
+    a { color: #1d9bf0; }
+  </style>
+</head>
+<body>
+  <p class="pill">Phase 9 — full dashboard coming</p>
+  <h1>Marketing Agent Control Plane</h1>
+  <p>Supervised Crew: Alex (Research) → Sam (Strategy) → Jordan (Creation) → <strong>Your approval</strong> → Ops.</p>
+  <p>The production UI will let you and your customers:</p>
+  <ul>
+    <li>Toggle features per tenant (API publish, browser assist, email send, intel refresh)</li>
+    <li>Approve / edit / reject drafts before anything goes live</li>
+    <li>Manage platform credentials when a feature is enabled</li>
+    <li>Run campaigns and view crew activity + traces</li>
+  </ul>
+  <p>API health: <a href="/api/health" id="health">checking…</a></p>
+  <script>
+    fetch('/api/health').then(r => r.json()).then(d => {
+      document.getElementById('health').textContent = d.status === 'ok' ? 'ok' : JSON.stringify(d);
+    }).catch(() => { document.getElementById('health').textContent = 'unreachable'; });
+  </script>
+</body>
+</html>

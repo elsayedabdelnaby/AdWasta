@@ -1,0 +1,28 @@
+{
+  "name": "marketing-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "db:migrate": "echo 'migrations — Phase 0'",
+    "db:seed": "echo 'seed — Phase 0'",
+    "evals:run": "echo 'evals — Phase 10'"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "@fastify/cors": "^10.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

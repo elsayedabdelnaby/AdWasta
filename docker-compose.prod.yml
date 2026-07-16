@@ -1,0 +1,22 @@
+# Production overrides — use with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Set secrets via .env or your host's secret manager (never commit real keys).
+
+services:
+  api:
+    ports: []   # expose only via reverse proxy / web
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  web:
+    ports:
+      - "80:80"
+
+  db:
+    ports: []   # do not expose Postgres publicly
+
+  redis:
+    ports: []   # do not expose Redis publicly
