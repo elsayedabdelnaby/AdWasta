@@ -4,7 +4,7 @@
 
 ## Project
 
-Multi-tenant AdWasta: Eight Arms, One Brain.
+Multi-tenant AdWasta: Supervised Crew — ten arms, five pillars, one Brain.
 
 Read `docs/design.md` before architectural changes.
 Follow `docs/implementation-plan.md` phase order.
@@ -20,8 +20,13 @@ For any non-trivial implementation phase, use the `ship-loop` skill from `../ski
 
 ## Non-negotiables
 
-- Every table and query is scoped by `tenant_id`
-- No publish or comment reply without approval
-- Default publish mode is `copy_pack`; browser and API require explicit tenant enable
+- Every table and query is scoped by `tenant_id` **and** protected by Postgres RLS
+- No publish or comment/DM reply without approval
+- Default publish mode is `copy_pack`; official API adapters require explicit tenant enable
+- **Browser publishing is deferred post-v1 (ADR-001, design §10.0) — do not implement it.** Playwright MCP is for QA/demos only
+- Competitor intel uses ToS-safe sources only (design §12) — never login-gated social scraping
 - API adapters are scaffolded early; activation is config + credentials only
+- Email sends require suppression-list gate + unsubscribe + consent attestation (design §21)
+- LLM never computes performance stats; the Analyst arm only interprets `src/metrics/` output
+- Respect release gates: R1 validation slice before R2/R3 (design §23)
 - Never commit credentials or `.env`
