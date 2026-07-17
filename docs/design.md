@@ -18,7 +18,7 @@ Build a **multi-tenant AdWasta** that runs the full marketing cycle for any busi
 - Intelligence: trend radar + competitor deep analysis
 - Content: post recommendations with **approve / edit / reject**
 - Operations: daily cross-platform strategy, scheduling, comment **and private message (DM)** reply drafts
-- Execution: **human-gated** publish paths optimized for organic reach
+- Execution: **human-gated** publish paths with zero account risk (copy pack default; official APIs opt-in)
 - Measurement: post/email metrics + performance insights that feed back into strategy and content (the agent learns per tenant)
 
 **Success looks like:** A user creates a tenant (brand workspace), onboards their business once, and gets daily actionable marketing output — with every external action gated behind explicit approval and a chosen publish mode.
@@ -195,7 +195,7 @@ These are final — do not revisit without strong evidence.
 | Context | Min sufficient per arm; lazy tools | [Context engineering](https://blog.dailydoseofds.com/p/the-anatomy-of-an-agent-harness) — quality over volume |
 | Model routing | Fast / balanced / deep per task | Cost + quality balance |
 | Verification | Rules + eval suite + ship-loop; judge ≠ producer | Deterministic beats self-grading |
-| Publish | Copy pack default; browser/API toggled | Organic reach; human arms execution |
+| Publish | Copy pack default; official API toggled per tenant; **browser publish deferred post-v1 (ADR-001)** | Zero account risk; ToS-safe; the "API posts get penalized reach" premise is unverified (Meta denies it) — validate with data before building UI automation |
 | Image gen | Nano Banana optional; Jordan writes prompt | Pixels ≠ copy; toggle off by default |
 | Permissions | Harness enforces; model only proposes | Anthropic separation pattern |
 | Multi-tenancy | Day one | Product requirement |
@@ -203,6 +203,14 @@ These are final — do not revisit without strong evidence.
 | Measurement | Deterministic metrics pipeline + LLM Analyst (interprets only) | Model never does arithmetic; insights cite metric rows |
 | Metrics ingestion | Manual/CSV first; email webhooks Phase 8; own-page Graph API post-v1 | Universal v1; automate only ToS-safe sources |
 | UTM tagging | Always on for every link in drafts | Free now; enables conversion attribution later |
+| Browser publish | **Deferred post-v1** (ADR-001, §10.0) | ToS violation + customer account risk + unverified reach premise |
+| Competitor data | ToS-safe tiers: SERP/web/RSS + pasted intel; paid provider adapter optional (§12) | Social scraping is blocked + illegal-ish; price the provider before R2 |
+| Tenant isolation | Middleware `tenant_id` **+ Postgres RLS from day one** | Defense-in-depth; cheap now, painful to retrofit |
+| Credential crypto | Envelope encryption (KEK → per-tenant DEK), KMS-ready | Rotation without re-encrypting every row |
+| Release scoping | R1 validation slice → R2 operations → R3 automation (§23) | Prove value before building the rest |
+| Eval gates | Deterministic rules blocking day one; judge scores ratchet in (§17) | Honest gates; fixtures harvested from real approvals |
+| Email sending | Only with suppression list + unsubscribe + consent attestation (§21) | CAN-SPAM / GDPR compliance before first send |
+| Prompts | Versioned (`PROMPT_VERSION` in traces); change ⇒ eval re-run | Prompts are the core product asset |
 
 ---
 
@@ -251,8 +259,8 @@ Customers activate only what they need. Turning a feature **on** opens a credent
 | `scheduler_enabled` | On | Calendar + reminders |
 | `engagement_enabled` | On | Comment + DM reply draft generation |
 | `measure_enabled` | On | Metrics ingestion + weekly Analyst run + angle scoring |
-| `browser_publish_enabled` | Off | Armed **Playwright** publish in native web UI (organic) |
-| `api_publish_enabled` | Off | Social API publish + credential form |
+| `browser_publish_enabled` | Off (**reserved — post-v1, ADR-001**) | Flag reserved; no v1 implementation |
+| `api_publish_enabled` | Off | Social API publish (official APIs) + credential form |
 | `api_reply_enabled` | Off | API replies on **public comments** |
 | `api_dm_reply_enabled` | Off | API replies on **private messages / DMs** |
 | `api_email_enabled` | Off | Email send via SMTP/SendGrid/Resend |
@@ -303,7 +311,7 @@ The harness is everything around the model: orchestration, tools, memory, contex
 | **2. Tools** | Lazy-loaded per arm; schema-validated; sandboxed execution |
 | **3. Memory** | Four memory types per tenant (see §5) |
 | **4. Context management** | Minimum sufficient context per step; arm-scoped prompts; compaction when buffer grows |
-| **5. Prompt construction** | Priority stack: system → arm skill → tenant profile → working state → user trigger |
+| **5. Prompt construction** | Priority stack: system → arm skill → tenant profile → working state → user trigger. **Prompts are versioned assets:** each arm prompt module exports `PROMPT_VERSION`; every trace step logs it; changing a prompt requires an eval re-run (CI); rollback = revert the version |
 | **6. Output parsing** | Native tool calls + Zod-validated structured outputs; never trust raw strings |
 | **7. State management** | DB persistence + checkpoints on schedules and browser publish flows |
 | **8. Error handling** | Four error classes with defined recovery (see §14) |
@@ -441,6 +449,34 @@ Configuration via `MODEL_ROUTING` env or per-tenant override in settings. Every 
 
 ---
 
+## 6.1 Unit economics — cost envelope per tenant
+
+**Rule (locked):** the product is not "done" until modeled cost per tenant-month is known and price ≥ 3× that cost. Estimates below are placeholders — **Phase 1 gate records actuals from traces and updates this table.**
+
+| Run | Frequency (defaults) | Est. cost/run | Est. cost/mo |
+|-----|----------------------|---------------|--------------|
+| RESEARCH crew (3 arms, balanced+deep) | 24h staleness ≈ 30/mo | ~$0.20 | ~$6.00 |
+| Competitor watch (light mode) | every 12h ≈ 60/mo | ~$0.05 | ~$3.00 |
+| STRATEGY crew (deep) | ~2/mo | ~$0.40 | ~$0.80 |
+| CREATION (5 drafts/platform/day cap) | ~30/mo runs | ~$0.15 | ~$4.50 |
+| Daily strategist | 30/mo | ~$0.10 | ~$3.00 |
+| Analyst (weekly) | 4–5/mo | ~$0.05 | ~$0.25 |
+| SERP API (Tavily/SerpAPI) | metered | — | ~$5–15 |
+| **Modeled total / tenant-month** | | | **~$25–35** |
+
+### Hard caps (harness-enforced, not advisory)
+
+| Cap | Env / setting | Behavior |
+|-----|---------------|----------|
+| Daily LLM spend per tenant | `DAILY_BUDGET_USD` (default 10) | Warning at 80%; **hard stop** at 100% — jobs pause, event `budget.hard_stop`, UI banner |
+| Monthly spend per tenant | `MONTHLY_BUDGET_USD` (default 50) | Same pattern |
+| Per-arm run cost | `MAX_RUN_COST_USD` (default 2) | Abort run mid-loop if exceeded; trace preserved |
+| Provider intel spend | per-tenant cap set when enabling `IntelProviderAdapter` | Provider calls refused past cap |
+
+**Pricing floor:** subscription price per tenant ≥ 3× modeled cost. At ~$30/mo modeled cost → price from ~$99/mo. Re-validate at every release gate with actuals.
+
+---
+
 ## 7. Multi-tenancy model
 
 **One shared PostgreSQL database for all customers.** Isolation is by `tenant_id` on every row — not a separate database per customer.
@@ -453,9 +489,9 @@ Configuration via `MODEL_ROUTING` env or per-tenant override in settings. Every 
 ### How isolation works
 
 - Middleware injects `tenant_id` on every query; no cross-tenant reads
+- **Postgres Row-Level Security enabled from day one** (Phase 0.2): every tenant table gets an RLS policy on `app.tenant_id`; middleware/worker sets the session variable per request/job. Cheap now, painful to retrofit
 - Credentials, events, drafts, and engagement items are all tenant-scoped
 - Demo tenant and real customers share the same schema and instance
-- Optional later: Postgres Row-Level Security (RLS) as a second defense
 
 Every record is scoped by `tenant_id`. No cross-tenant reads.
 
@@ -463,7 +499,7 @@ Every record is scoped by `tenant_id`. No cross-tenant reads.
 |--------|---------|
 | `tenants` | Brand workspace (name, industry, locale, timezone) |
 | `tenant_profiles` | Onboarding: description, audience, goals, voice, competitors list, platforms |
-| `icp_profiles` | Ideal Customer Profile: firmographics, pain points, buying triggers |
+| `icp_profiles` | Ideal Customer Profile with `audience_model: b2b \| b2c` — B2B: firmographics, buying triggers, objections; B2C: demographics, psychographics, buying occasions. Strategy prompts branch on this (demo tenant Aurora Coffee = b2c) |
 | `personas` | Generated + editable buyer personas (derived from ICP) |
 | `messaging_angles` | Positioning angles, hooks, proof points per channel |
 | `marketing_plans` | Versioned plans (channels, themes, KPIs, calendar skeleton) |
@@ -628,7 +664,7 @@ Write events **synchronously in the same transaction** as the domain change when
 |-----|-------|
 | Market | `search_serp`, `search_web`, `query_intel_history` |
 | Trend | `search_web`, `fetch_feed`, `query_intel_history` |
-| Competitor | `fetch_public_profile`, `search_web`, `query_intel_history`, `detect_campaign_change` |
+| Competitor | `fetch_web_page`, `fetch_feed`, `search_web`, `read_pasted_intel`, `fetch_provider_data` (if provider enabled), `query_intel_history`, `detect_campaign_change` |
 | Strategy | `read_profile`, `write_icp`, `write_personas`, `write_angles`, `write_plan` |
 | Content | `read_plan`, `read_angles`, `read_intel`, `write_draft`, `write_visual_brief`, `generate_image` (only if `image_gen_enabled`) |
 | Daily strategist | `read_all_tenant_state`, `trigger_content_if_needed` |
@@ -752,7 +788,7 @@ Do not inject all tools into every LLM call. Register tools globally; expose onl
 |------------|------------------------|
 | Market | SERP search, web search, intel history |
 | Trend | search, feed, intel history |
-| Competitor | profile fetch, search, intel history |
+| Competitor | web page fetch, feeds, search, pasted intel, provider data (toggled), intel history |
 | Strategy | profile, ICP, personas, angles, plan write |
 | Content | plan, angles, intel read; draft + visual brief write; `generate_image` if enabled |
 | Publisher | adapter resolve, publish, replyToComment, replyToMessage, send_email (only after approval exists) |
@@ -768,21 +804,21 @@ Do not inject all tools into every LLM call. Register tools globally; expose onl
 
 ## 10. Publish & reply modes (per tenant, per platform)
 
-Three execution adapters. **All built in v1.** Default activation:
+Two execution adapters in v1; browser publish is **deferred post-v1** (ADR-001, §10.0). Default activation:
 
 | Adapter | ID | Default | Use when |
 |---------|-----|---------|----------|
-| Copy pack | `copy_pack` | **On** | User pastes into native app; best reach control |
-| Browser | `browser` | Off | User arms post; **Playwright** posts in the real site UI like a human (organic reach; no social API) |
-| API | `api` | Off | User enables flag + saves credentials; future/automation |
+| Copy pack | `copy_pack` | **On** | User pastes into native app; zero account risk; full control |
+| API | `api` | Off | User enables flag + saves credentials; official platform APIs only |
+| Browser | `browser` | **Deferred post-v1** | Reserved flag; see ADR-001 |
 
-**Organic reach priority:** Prefer copy pack or Playwright browser publish over social APIs. APIs often reduce organic distribution; browser publish mimics a real user in Facebook/X/etc.
+**Publish principle (revised):** Copy pack is the default because it carries zero account risk and works on every platform. When tenants want automation, use **official APIs**. The earlier claim that API publishing penalizes organic reach is unverified (Meta publicly denies a reach penalty for API posts) — reach differences come from content quality and format, not the publish channel.
 
 ### Feature flag matrix (`platform_connections`)
 
 ```yaml
-publish_mode: copy_pack | browser | api    # preferred default path
-browser_publish_enabled: false
+publish_mode: copy_pack | api              # default copy_pack; `browser` value reserved (ADR-001)
+browser_publish_enabled: false             # reserved — no v1 implementation (ADR-001)
 api_publish_enabled: false
 api_reply_enabled: false                   # public comments
 api_dm_reply_enabled: false                # private messages / DMs
@@ -792,7 +828,6 @@ require_approval_for_reply: true           # comments AND DMs — always true in
 ```
 
 When user toggles `api_*_enabled` → UI prompts for credentials → validate → encrypt → store in `credentials` → run adapter health check.
-When user toggles `browser_publish_enabled` → UI walks through browser session setup (login once, encrypted storage) → health check opens site in isolated context.
 
 ### Permission model (separate from model reasoning)
 
@@ -827,53 +862,34 @@ No silent publish. No silent auto-reply on comments **or DMs**.
 
 ---
 
-## 10.0 Playwright — human-like website publish (locked)
+## 10.0 ADR-001 — Browser (Playwright) publishing deferred post-v1
 
-**Why:** Post in the **native web UI** so reach stays organic. No Graph/API post for default organic publishing.
+**Decision (2026-07-17):** The in-app Playwright publisher originally planned for Phase 7 is **deferred indefinitely**. `browser_publish_enabled` stays as a reserved flag; no v1 implementation.
 
-### Two Playwright surfaces (do not conflate)
+### Why (supersedes the earlier "organic reach" rationale)
 
-| Surface | Where it runs | Purpose |
-|---------|---------------|---------|
-| **Playwright in AdWasta** (production) | Worker / OPS Publisher arm (`src/adapters/browser/`) | Armed, scheduled, checkpointed publish for tenants |
-| **Playwright MCP** (dev / QA) | Cursor IDE MCP | Agents and humans verify flows, debug selectors, demo publish without shipping product code |
+| Concern | Detail |
+|---------|--------|
+| **ToS violation** | Automating posts through Facebook/X web UIs violates both platforms' Terms of Service |
+| **Customer account risk** | Bot detection is aggressive; the accounts at risk belong to **tenants**, not us — a ban destroys their business asset and our reputation |
+| **Indefensible intent** | Human-like delays/typing cadence is deliberate detection evasion — indefensible if challenged |
+| **Breach blast radius** | Storing tenants' session cookies creates a worst-case full-account-takeover scenario |
+| **Weak premise** | The claim that API posts are penalized on organic reach is unverified; Meta publicly denies it. Reach differences come from content quality, not publish channel |
 
-Product execution **always** goes through the in-app adapter. Playwright MCP is a **build-time / QA tool**, not the multi-tenant runtime.
+### What replaces it
 
-### Production adapter behavior (Phase 7)
+- **Copy pack** (default) — covers organic publishing on every platform with zero account risk
+- **Official APIs** (Phase 8, toggled) — for tenants who want automation
 
-```
-Approved + armed item
-  → gate: browser_publish_enabled + permissions.canExecute
-  → load tenant-isolated Playwright context (cookies / storage state)
-  → computer-use loop: screenshot → reason → act (click/type)
-  → checkpoint after each UI step (resume from last_step on failure)
-  → human-like delays / typing (avoid instant API-shaped bursts)
-  → on success: audit_log + agent_traces + system_events
-  → on failure: never silent; surface in UI; max 2 transient retries
-```
+### Revisit conditions (all required)
 
-### Session & isolation
+1. Measured, tenant-level data showing a meaningful reach penalty for API-published posts
+2. A ToS-compliant execution path (e.g. platform-sanctioned automation)
+3. Explicit tenant consent flow acknowledging residual risk
 
-- One browser **storage state** (or profile dir) **per tenant + platform** — never shared across tenants
-- Sessions encrypted at rest (same vault pattern as API credentials)
-- Worker runs headed or headless per env; Docker image includes Playwright browsers
-- Login is human-assisted once (QR / password in UI); agent does not scrape passwords from chat
-- Cookie refresh / re-auth interrupts → user-fixable error class (§15)
+### Playwright MCP (unchanged)
 
-### Human-like interaction rules
-
-- Prefer visible UI controls over hidden API shortcuts
-- Randomize short delays within bounds; type text in chunks (not one paste dump unless the site expects it)
-- Stop and checkpoint before irreversible clicks (Post / Share / Send)
-- Cap steps (~40); hard stop + checkpoint if UI diverges (captcha, unexpected modal)
-
-### Playwright MCP usage (dev only)
-
-- Validate Facebook/X publish selectors against live or staging pages
-- Smoke-test approval → execute path during Phase 7/9 gates
-- Support `frontend-visual-qa` and ship-loop demos
-- **Never** point MCP at production tenant sessions or store customer cookies in Cursor config
+Playwright MCP in Cursor remains a **dev/QA tool only** — `frontend-visual-qa`, dashboard smoke tests, demo flows. It never touches tenant sessions or production data.
 
 ---
 
@@ -914,13 +930,14 @@ Daily brief includes: comments needing replies **and** unread DM drafts in the a
 
 | Field | Notes |
 |-------|-------|
-| Storage | Encrypted at rest (AES-256-GCM); key from `CREDENTIALS_MASTER_KEY` env |
+| Storage | **Envelope encryption** (AES-256-GCM): `CREDENTIALS_MASTER_KEY` (KEK) encrypts one DEK per tenant; tenant secrets encrypted with their DEK. KMS-ready interface |
+| Rotation | KEK rotation re-encrypts DEKs only (not every credential row); per-tenant DEK rotation supported; runbook in `docs/security.md` |
 | Scope | `tenant_id` + `platform` + `credential_type` |
-| Types | `oauth_tokens`, `api_key`, `session_cookie` (browser-only, optional) |
+| Types | `oauth_tokens`, `api_key` (no session cookies — browser publish deferred, ADR-001) |
 | UX | Settings → Platform → Enable API → wizard asks required fields |
 | Validation | Adapter `validateCredentials()` before save; periodic `healthCheck()` |
 
-**Never** commit credentials. Rotate any keys that were pasted into notes files.
+**Never** commit credentials. Rotate any keys that were pasted into notes files **immediately** (this happened with an OpenRouter key in `nots.md` — rotate it in the OpenRouter dashboard).
 
 ---
 
@@ -928,13 +945,18 @@ Daily brief includes: comments needing replies **and** unread DM drafts in the a
 
 **Principle:** Model pulls context via tools; don't stuff everything into one prompt.
 
-| Source | Tool | Notes |
-|--------|------|-------|
-| Web search | `search_web` | Trend queries scoped to tenant industry + locale |
-| Public social profiles | `fetch_public_profile` | Competitor pages; respect rate limits |
-| RSS / news | `fetch_feed` | Optional industry feeds |
-| Stored intel | `query_intel_history` | Compare week-over-week |
-| Campaign diff | `detect_campaign_change` | Compare latest competitor posts/hooks vs last snapshot |
+**Data-source decision (locked — closes the "how do we actually get competitor data" gap):** Facebook/Instagram/X aggressively block scraping and require login for most content — `fetch_public_profile` against social platforms is **not** a viable primary source. Competitor intel uses ToS-safe tiers; social-post-level data comes only from a paid provider adapter or user-pasted intel.
+
+| Tier | Source | Tool | Cost / notes |
+|------|--------|------|--------------|
+| 1 | SERP + web search (Tavily / SerpAPI) | `search_serp`, `search_web` | Metered API, budgeted in §6.1; covers competitor sites, news, launches |
+| 1 | Competitor websites, blogs, newsletters, RSS | `fetch_web_page`, `fetch_feed` | Free; robots.txt respected; sanitized (§16) |
+| 2 | User-pasted intel (screenshots/text of competitor posts) | `paste_intel` (UI) | Free; v1 answer for social-post-level signals |
+| 3 | **Paid data provider adapter** (Apify / Bright Data / official APIs) | `IntelProviderAdapter` (optional, per-tenant credential + monthly cost cap) | ~$50–500+/mo depending on volume — priced into tenant plan before enabling; **decision + pricing required before R2**, not assumed |
+| — | Stored intel | `query_intel_history` | Week-over-week comparison |
+| — | Campaign diff | `detect_campaign_change` | Diffs whatever tiers above provided vs last snapshot |
+
+**Never:** login-gated scraping of social platforms, fake accounts, or evading anti-bot measures.
 
 Competitor arm outputs structured analysis:
 
@@ -972,7 +994,7 @@ Trend arm filters for **business relevance** — not viral noise unrelated to te
 
 On each watch cycle:
 
-1. Fetch latest public posts/ads signals for tracked competitors  
+1. Fetch latest competitor signals via the **§12 source tiers**: SERP + competitor sites/RSS always; social-post signals only when the paid provider adapter is enabled or the user pasted intel (watch quality scales with enabled tiers — set this expectation in the UI)  
 2. Diff vs previous `intel_snapshots` / stored post fingerprints  
 3. If **campaign signal** detected → create `competitor_alerts` row + `system_events` (`competitor.campaign_detected`)  
 4. Surface in UI: Research → Alerts + optional notification  
@@ -1122,12 +1144,10 @@ Runs once per tenant per day (cron or manual trigger):
 | Type | Behavior |
 |------|----------|
 | **Soft schedule** | Calendar slot + reminder + copy pack ready at T-minus |
-| **Armed browser** | At scheduled time, if `browser_publish_enabled` + item armed → Publisher runs **in-app Playwright** (human-like UI publish, checkpointed) |
-| **Armed API** | At scheduled time, if `api_publish_enabled` + creds valid + item armed → Publisher uses API adapter |
+| **Armed API** | At scheduled time, if `api_publish_enabled` + creds valid + item armed → Publisher uses official API adapter |
+| ~~Armed browser~~ | **Deferred post-v1** (ADR-001, §10.0) |
 
 Scheduler stores checkpoint: `pending | reminded | executing | published | failed | skipped`. Failed at step N resumes from N.
-
-Long browser publish flows (~40 steps) checkpoint after each UI action so step 39 failure does not restart from step 1.
 
 ---
 
@@ -1148,13 +1168,15 @@ Publisher arm never swallows errors — they become `audit_log` entries with `tr
 
 ## 16. Security & compliance
 
-- Tenant isolation at query layer (middleware injects `tenant_id`)
-- Credentials encrypted; never logged
+- **Two-layer tenant isolation from day one:** middleware injects `tenant_id` on every query **and** Postgres Row-Level Security policies (keyed on a `app.tenant_id` session variable set per request/job) as defense-in-depth — a single middleware bug can no longer cause a cross-tenant leak
+- **Envelope encryption for credentials:** `CREDENTIALS_MASTER_KEY` is a key-encryption key (KEK) that encrypts one data-encryption key (DEK) per tenant; tenant secrets are encrypted with their DEK. Rotation = re-encrypt DEKs only, not every row. Interface is KMS-ready (swap env KEK for AWS KMS / Vault later without schema change)
+- **Key rotation procedure documented** (`docs/security.md`): rotate KEK, rotate a tenant DEK, revoke a platform credential — each a runbook entry, not tribal knowledge
+- Credentials never logged; secrets never in event payloads or traces
 - Audit log for all approvals and executions
 - Rate limiting on intel tools and LLM calls per tenant
-- Browser sessions isolated per tenant (**Playwright storage state** per tenant + platform; no cross-tenant cookies)
 - User must own connected accounts; no credential sharing across tenants
-- Playwright MCP is for local QA only — never wire production tenant sessions into IDE MCP
+- No tenant browser sessions or cookies are stored anywhere (browser publish deferred — ADR-001)
+- Playwright MCP is for local QA only — never wire production data into IDE MCP
 
 ### Prompt injection defense (external content)
 
@@ -1191,6 +1213,15 @@ Maintain `evals/fixtures/` per arm with demo tenant scenarios:
 - Content: on-brand voice; platform-appropriate length
 - Daily brief: references real scheduled items, not invented ones
 - Analyst: fixture with a planted winner/loser → must identify both, cite the right `post_metrics` rows, and refuse conclusions below the sample threshold
+
+### Fixture-building process (required — gates are meaningless without it)
+
+The ≥90% targets only mean something if fixtures are good. Process, per arm:
+
+1. **Before the arm's phase starts:** hand-author **≥10 golden fixtures** — input scenario + expected-outcome assertions. Cover both `audience_model=b2c` (Aurora Coffee) and one `b2b` fixture tenant
+2. **Review:** each fixture passes `grill-with-docs` against the tenant profile (does the "expected" answer actually make marketing sense?)
+3. **Ratchet, don't pretend:** deterministic rules are blocking from day one (100% pass). LLM-as-judge scores are **advisory** for an arm's first phase; they become blocking at ≥90% only once the arm has ≥25 fixtures including real-usage examples harvested from R1
+4. **Harvest:** every human edit/rejection in the approval inbox is a candidate fixture (input + what the human changed) — the fixture set grows from real usage, not imagination
 
 ### Eval types (layered)
 
@@ -1263,7 +1294,7 @@ Brain loads procedural skills **only when relevant** (dynamic discovery, not upf
 | DB | PostgreSQL + Drizzle ORM | Multi-tenant relational data |
 | Queue | BullMQ + Redis | Scheduled jobs, armed execution, background arm runs |
 | LLM | OpenRouter (routed per task) | Configurable tiers per arm |
-| Browser | **Playwright** (in-app) | Computer-use publish arm — organic UI posts; MCP for QA only |
+| Browser | **Playwright MCP (dev/QA only)** | Dashboard visual QA + demos; in-app publisher deferred (ADR-001) |
 | UI | Vite + React | Approval inbox, calendar, settings, traces |
 | Secrets | env + encrypted DB column | Credential vault + browser session storage |
 | Observability | OpenTelemetry-compatible traces (or custom `agent_traces` v1) | Cost and debug visibility |
@@ -1273,15 +1304,29 @@ Brain loads procedural skills **only when relevant** (dynamic discovery, not upf
 
 ## 21. Platform adapters (v1 scope)
 
-| Channel / platform | Copy pack | Browser arm (Playwright) | API arm (ready, off) |
-|--------------------|-----------|-------------|----------------------|
-| **Email** | ✓ (subject + body) | N/A | ✓ SMTP / SendGrid / Resend scaffold |
-| Facebook | ✓ | ✓ scaffold | ✓ Graph API scaffold |
-| X (Twitter) | ✓ | ✓ scaffold | ✓ API v2 scaffold |
-| LinkedIn | ✓ | later | scaffold |
-| Instagram | ✓ | later (via FB) | scaffold |
+| Channel / platform | Copy pack | API arm (ready, off) | Browser arm |
+|--------------------|-----------|----------------------|-------------|
+| **Email** | ✓ (subject + body) | ✓ SMTP / SendGrid / Resend scaffold | N/A |
+| Facebook | ✓ | ✓ Graph API scaffold | deferred (ADR-001) |
+| X (Twitter) | ✓ | ✓ API v2 scaffold | deferred (ADR-001) |
+| LinkedIn | ✓ | scaffold | deferred |
+| Instagram | ✓ | scaffold (via FB) | deferred |
 
 **Scaffold** = interface + credential schema + health check + stub that fails gracefully with "enable in settings". Activation is config + credentials only — no rewrite.
+
+### Email compliance & deliverability (required before any send — R3)
+
+Sending marketing email without this is a legal problem (CAN-SPAM / GDPR), not a feature gap:
+
+| Requirement | Implementation |
+|-------------|----------------|
+| Consent-only lists | v1 sends only to tenant-provided lists with a `consent_confirmed` attestation checkbox; no purchased/scraped lists — refuse import without attestation |
+| Unsubscribe | Working unsubscribe link injected into **every** email; one-click; processed within 10 days (CAN-SPAM) — target immediate |
+| Suppression list | `email_suppressions` table per tenant: unsubscribes, hard bounces, spam complaints. **Publisher refuses to send to suppressed addresses** (harness gate, like risk levels) |
+| Sender identity | Physical mailing address + accurate From/Reply-To in footer template (CAN-SPAM); tenant provides at email-enable time |
+| Bounce/complaint handling | Webhooks (Task 8.3b) auto-add hard bounces + complaints to suppression |
+| Authentication | Setup docs walk tenant through SPF, DKIM, DMARC before health check passes |
+| GDPR | Unsubscribe = erasure request for marketing data; suppression survives list re-import |
 
 ### Adapter interface
 
@@ -1350,12 +1395,22 @@ interface PlatformAdapter {
 | **4** | **OPS** daily strategist (email + social priorities, consumes `performance_insights`) | Brief eval pass |
 | **5** | **OPS** scheduler (email + social calendar) | Reminders + checkpoints |
 | **6** | **OPS** engagement (comments + DMs) | HIGH risk gate for both |
-| **7** | **OPS** browser publisher via **Playwright** (human-like social UI) | Optional armed publish; checkpoint resume; MCP QA |
-| **8** | **OPS** API adapters (social + email send, toggled off) + **email metrics webhooks → `post_metrics`** | Credential wizard |
+| ~~7~~ | ~~Browser publisher~~ — **deferred post-v1 (ADR-001)** | — |
+| **8** | **OPS** API adapters (social + email send, toggled off) + **email metrics webhooks → `post_metrics`** + **email compliance (suppression, unsubscribe)** | Credential wizard + compliance checks |
 | **9** | Dashboard UI + observability (5-pillar navigation incl. Performance page) | frontend-visual-qa |
 | **10** | Eval CI + deploy hardening | Full suite ≥ 90% |
 
-Phases 0–6 (incl. 3.5 MEASURE) + eval/observability foundations = **shippable MVP**. 7–8 = execution arms ready to activate.
+### Release plan (locked — solves v1 over-scope)
+
+Phases are grouped into three releases. **Do not start a later release before the earlier one has real usage evidence.**
+
+| Release | Contains | Scope guard | Exit criterion |
+|---------|----------|-------------|----------------|
+| **R1 — Validation slice** | Phases 0, 0.5, 1, 2, 3 (+3.8), 3.5 + **thin approval UI** (Task 3.9) | **One platform (Facebook) + email copy**, copy pack only, single tenant onboarded manually | A real tenant approves content weekly for 2+ consecutive weeks and says they'd pay |
+| **R2 — Operations** | Phases 4, 5, 6, 9 (full dashboard), 10 (eval CI) | Add X (Twitter); still copy pack only | Daily brief + calendar + engagement in active use |
+| **R3 — Automation (opt-in)** | Phase 8 (official API adapters + email send + webhooks) | Official APIs only; browser publish stays deferred (ADR-001) | Tenants explicitly request automation; compliance checklist green |
+
+R1 answers the only question that matters first: **does the agent produce marketing output a real business wants to approve?** Everything in R2/R3 is worthless if R1's answer is no.
 
 ---
 
@@ -1397,7 +1452,7 @@ Phases 0–6 (incl. 3.5 MEASURE) + eval/observability foundations = **shippable 
 - [Agentic AI Engineer Roadmap](https://youmind.com/landing/x-viral-articles/agentic-ai-engineer-roadmap-guide) — async, HITL, evals, tracing, production deploy
 - [Min(Input) → Max(Output)](https://ahmedhesham.dev/blog/min-input-max-output/) — reachable vs active context
 - Veeza computer-use talk — gate irreversible actions, checkpoint long flows
-- Playwright — production browser adapter + MCP for flow QA
+- Playwright MCP — dev/QA flow verification only (in-app publisher deferred, ADR-001)
 - Repo `skills/` — ship-loop completion gate
 
 ---

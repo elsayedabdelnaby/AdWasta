@@ -38,9 +38,9 @@ Competitors       Angles / Hooks     Visuals + images   Social       Insights
 
 | Mode | Default | Description |
 |------|---------|-------------|
-| `copy_pack` | On | Ready-to-paste; best organic reach |
-| `browser` | Off | **Playwright** posts in native web UI like a human (organic reach; no API) |
-| `api` | Off | Toggle + credentials; no rewrite to activate |
+| `copy_pack` | On | Ready-to-paste; zero account risk; works everywhere |
+| `api` | Off | Official platform APIs; toggle + credentials; no rewrite to activate |
+| `browser` | — | **Deferred post-v1** (ADR-001 — ToS + account-risk; see design §10.0) |
 | `image_gen` | Off | Nano Banana / Gemini images for posts (Jordan writes prompt) |
 
 ## Docs
@@ -52,7 +52,7 @@ Competitors       Angles / Hooks     Visuals + images   Social       Insights
 
 ## Principles
 
-- **Organic first** — copy pack or Playwright UI publish; API optional and off by default
+- **Zero account risk first** — copy pack default; official APIs opt-in; no ToS-violating automation (ADR-001)
 - **Harness is the product** — traces, evals, permissions, checkpoints
 - **Human keeps judgment** — approve before publish/reply/send
 - **Closed loop** — metrics feed insights; insights feed the next strategy and content round

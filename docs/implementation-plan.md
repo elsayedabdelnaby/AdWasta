@@ -6,7 +6,7 @@
 
 **Architecture (locked):** Supervisor Brain routes campaigns. **No chatty multi-agent.** Crews hand off typed `ArmResult` to DB. RESEARCH runs parallel; STRATEGY sequential; CREATION ReAct; OPS deterministic + human gates; MEASURE = deterministic stats pipeline + Analyst arm that interprets only. Ten arms, five crews, lazy tools, model routing, evals, traces.
 
-**Tech stack:** Node 22, TypeScript, Fastify, PostgreSQL, Drizzle, BullMQ, Redis, **Playwright** (in-app publish + MCP for QA), OpenRouter (routed tiers), Vite + React dashboard.
+**Tech stack:** Node 22, TypeScript, Fastify, PostgreSQL (with RLS), Drizzle, BullMQ, Redis, Playwright MCP (dev/QA only — ADR-001), OpenRouter (routed tiers), Vite + React dashboard.
 
 **Design reference:** `docs/design.md` v3.1 — Supervised Crew, five pillars (incl. MEASURE §12.2), harness, evals.
 
@@ -22,8 +22,13 @@
 | CREATION | ReAct inside Content arm; visual briefs; optional Nano Banana images |
 | OPS | Deterministic workflow; human approval before publish/reply/send |
 | MEASURE | Deterministic metrics pipeline in code (`src/metrics/`); **Analyst arm** interprets only; insights must cite `post_metrics` rows |
-| Publish default | Copy pack; **Playwright browser** / API toggled per tenant (organic prefer browser over API) |
-| Browser runtime | **Playwright in-app** (Phase 7); **Playwright MCP** for Cursor QA/demos only |
+| Publish default | Copy pack (zero account risk); official API adapters toggled per tenant (R3) |
+| Browser publish | **Deferred post-v1 — ADR-001** (design §10.0); flag reserved; Playwright MCP for Cursor QA/demos only |
+| Releases | R1 validation slice (Phases 0–3.5 + thin UI, one platform) → R2 operations → R3 automation (design §23) |
+| Tenant isolation | Middleware `tenant_id` + **Postgres RLS from Phase 0.2** |
+| Credential crypto | Envelope encryption: KEK (`CREDENTIALS_MASTER_KEY`) → per-tenant DEKs; KMS-ready |
+| Competitor data | ToS-safe tiers (SERP/web/RSS/pasted) + optional paid provider adapter — no social scraping (design §12) |
+| Prompts | Versioned (`PROMPT_VERSION` logged in traces); prompt change requires eval re-run |
 | UI personas | Alex (Research), Sam (Strategy), Jordan (Creation), Ops, Riley (Measure) |
 
 ## Marketing cycle — execution map
@@ -50,7 +55,7 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 | **4** | **OPS** | Daily strategist (email + social, consumes `performance_insights`) | ship-loop |
 | **5** | **OPS** | Scheduler (email + social calendar) | ship-loop |
 | **6** | **OPS** | Comments + DM reply drafts | ship-loop |
-| **7** | **OPS** | Browser publisher via **Playwright** (human-like UI) | ship-loop + Playwright MCP QA |
+| ~~7~~ | ~~OPS~~ | ~~Browser publisher~~ — **deferred post-v1 (ADR-001)** | — |
 | **8** | **OPS** | API adapters (social + email, toggled) | ship-loop |
 | **9** | (UI) | 5-pillar dashboard + Performance page + traces | frontend-visual-qa |
 | **10** | (hardening) | Eval CI | ship-loop |
@@ -63,12 +68,13 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 - No publish or reply (comment or DM) without explicit approval in v1
 - `require_approval_for_publish` and `require_approval_for_reply` are always true in v1
 - Separate toggles: `api_reply_enabled` (comments) vs `api_dm_reply_enabled` (DMs)
-- Default publish mode: `copy_pack`; `browser` and `api` off until tenant enables
+- Default publish mode: `copy_pack`; `api` off until tenant enables; `browser` deferred post-v1 (ADR-001)
 - API adapters fully scaffolded in v1 (interface, credential schema, health check, stub) — activation is config only
-- Credentials encrypted at rest; never commit secrets
+- Credentials: envelope encryption (KEK → per-tenant DEK); never commit secrets; rotation runbook in `docs/security.md`
+- Postgres RLS enabled on every tenant table from Phase 0.2 (defense-in-depth with middleware `tenant_id`)
 - Integrate repo `skills/` via ship-loop completion gate per phase
-- Organic reach priority: prefer **copy pack** or **Playwright browser publish**; no API organic publish unless tenant explicitly enables
-- Browser publish = **in-app Playwright** (screenshot → act, checkpointed); **Playwright MCP** only for build/QA/demos — not the product runtime
+- Competitor intel: ToS-safe sources only (SERP, competitor sites/RSS, pasted intel, optional paid provider adapter) — never login-gated social scraping (design §12)
+- Playwright MCP only for build/QA/demos — not the product runtime
 - Model proposes actions; harness permits them (permission layer separate from LLM)
 - HIGH-risk actions (`post_public`, `reply_comment`, `reply_message`, `publish`, `send_email`) always require human approval
 - Lazy tool loading: only arm-relevant tools in each LLM call
@@ -82,7 +88,10 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 - Copy-pack publishes are anchored via **Mark as published** → `published_items` (no anchor, no metrics)
 - Eval deploy gate: ≥ 90% pass rate on golden fixtures before phase sign-off (where evals exist)
 - Max 10 ReAct steps per arm loop; max 2 retries on transient errors
-- Every LLM call logs to `agent_traces` (model, tokens, cost, latency)
+- Every LLM call logs to `agent_traces` (model, tokens, cost, latency, `prompt_version`)
+- Budget caps harness-enforced: `DAILY_BUDGET_USD` + `MONTHLY_BUDGET_USD` hard stop; `MAX_RUN_COST_USD` aborts a run mid-loop (design §6.1)
+- ≥10 hand-authored golden fixtures per arm **before** that arm's phase starts; deterministic rules blocking day one; LLM-judge scores advisory until ≥25 fixtures exist (design §17)
+- Email send (R3) requires: consent attestation, unsubscribe link, suppression-list gate, SPF/DKIM/DMARC docs (design §21) — Publisher refuses sends to suppressed addresses
 
 ---
 
@@ -139,14 +148,7 @@ marketing-agent/
 │   │   │   ├── types.ts
 │   │   │   ├── nano-banana.ts
 │   │   │   └── stub.ts
-│   │   ├── browser/              # Playwright computer-use (Phase 7)
-│   │   │   ├── base.ts           # screenshot → act loop + checkpoints
-│   │   │   ├── playwright-pool.ts
-│   │   │   ├── session-store.ts  # per-tenant encrypted storage state
-│   │   │   ├── humanize.ts       # delays / typing cadence
-│   │   │   ├── facebook.ts
-│   │   │   └── twitter.ts
-│   │   └── api/
+│   │   └── api/                  # official platform APIs (browser/ deferred — ADR-001)
 │   ├── credentials/
 │   │   ├── vault.ts
 │   │   └── schemas/
@@ -172,7 +174,8 @@ marketing-agent/
 │   │   ├── registry.ts
 │   │   ├── search-serp.ts          # RESEARCH — keywords, SERP
 │   │   ├── search-web.ts
-│   │   └── fetch-public-profile.ts
+│   │   ├── fetch-web-page.ts       # competitor sites/blogs (robots.txt-respecting)
+│   │   └── intel-provider.ts       # optional paid provider adapter (Apify/Bright Data)
 │   └── api/routes/
 ├── web/
 │   ├── src/pages/
@@ -218,6 +221,8 @@ marketing-agent/
 - [ ] `agent_traces` (trace_id, tenant_id, arm, crew, steps JSON, cost, latency, status)
 - [ ] `jobs` (async arm runs: queued | running | completed | failed)
 - [ ] Indexes: `(tenant_id, created_at DESC)` on events, audit, traces
+- [ ] **Enable Postgres RLS on every tenant table**: policy on `app.tenant_id` session var; Fastify middleware + BullMQ workers set it per request/job
+- [ ] Isolation test: query with wrong `app.tenant_id` returns zero rows even without a WHERE clause
 - [ ] Run first migration
 
 ### Task 0.2b: Event writer helper
@@ -244,10 +249,12 @@ marketing-agent/
 **Files:**
 - Create: `src/credentials/vault.ts`, `src/credentials/schemas/facebook.ts`, `twitter.ts`
 
-- [ ] `encrypt()` / `decrypt()` AES-256-GCM with `CREDENTIALS_MASTER_KEY`
+- [ ] **Envelope encryption**: `CREDENTIALS_MASTER_KEY` (KEK) encrypts one DEK per tenant; secrets encrypted AES-256-GCM with the tenant DEK
+- [ ] KMS-ready interface (`KeyProvider`): env KEK now, AWS KMS / Vault later without schema change
+- [ ] `rotateKek()` re-encrypts DEKs only; `rotateTenantDek(tenantId)` re-encrypts one tenant's rows; runbook in `docs/security.md`
 - [ ] `saveCredentials(tenantId, platform, payload)` / `getCredentials()`
 - [ ] Credentials never appear in logs or traces
-- [ ] Unit test round-trip
+- [ ] Unit tests: round-trip, KEK rotation, cross-tenant DEK misuse fails
 
 ### Task 0.5: Platform settings API
 
@@ -264,7 +271,7 @@ marketing-agent/
 - Create: `src/adapters/types.ts`, `src/adapters/registry.ts`
 
 - [ ] `PlatformAdapter` interface
-- [ ] Register copy-pack, browser, api stubs per platform
+- [ ] Register copy-pack + api stubs per platform (`browser` mode id reserved — ADR-001)
 - [ ] `resolveAdapter(tenantId, platform, mode)` respects flags
 
 ### Task 0.7: Async job API
@@ -312,8 +319,10 @@ marketing-agent/
 - Create: `src/config/model-routing.ts`, `src/llm/openrouter.ts`
 
 - [ ] `routeModel(taskClass: 'fast' | 'balanced' | 'deep')` → env model IDs
-- [ ] Chat wrapper: retry (max 2), log tokens/cost/latency to active trace
+- [ ] Chat wrapper: retry (max 2), log tokens/cost/latency + `prompt_version` to active trace
 - [ ] `structuredComplete<T>(schema: ZodType<T>)` — parse or throw LLM-recoverable error
+- [ ] Budget guards: `DAILY_BUDGET_USD` / `MONTHLY_BUDGET_USD` hard stop; `MAX_RUN_COST_USD` aborts run mid-loop (design §6.1); emit `budget.hard_stop`
+- [ ] Prompt convention: every arm prompt module exports `PROMPT_VERSION` (semver); CI blocks prompt changes without an eval re-run
 
 ### Task 0.5.2: ReAct loop shell
 
@@ -379,10 +388,12 @@ marketing-agent/
 ### Task 1.1: Tool implementations
 
 **Files:**
-- Create: `src/tools/search-serp.ts`, `search-web.ts`, `fetch-public-profile.ts`, `fetch-feed.ts`, `query-intel-history.ts`
+- Create: `src/tools/search-serp.ts`, `search-web.ts`, `fetch-web-page.ts`, `fetch-feed.ts`, `intel-provider.ts`, `query-intel-history.ts`
 
 - [ ] `search_serp`: keywords, SERP results, People Also Ask (SerpAPI/Tavily or fixture)
-- [ ] `search_web`, `fetch_public_profile`, `fetch_feed` with offline fixtures
+- [ ] `search_web`, `fetch_web_page` (competitor sites/blogs, robots.txt-respecting), `fetch_feed` with offline fixtures
+- [ ] `paste_intel` intake: user-pasted competitor post text/screenshot transcriptions → sanitized intel input (v1 path for social-post signals)
+- [ ] `IntelProviderAdapter` interface + stub: optional paid provider (Apify / Bright Data / official APIs) behind per-tenant credential + monthly cost cap — **no social scraping in our code** (design §12)
 - [ ] All external results through `sanitize-external.ts`
 - [ ] Rate limit per tenant
 
@@ -461,10 +472,11 @@ marketing-agent/
 - Create: `src/arms/strategy/generate.ts`, `prompts/strategy.ts`
 - Create: `src/db/schema/icp-profiles.ts`, `personas.ts`, `messaging-angles.ts`, `marketing-plans.ts`
 
-- [ ] Step A: `icp_profiles` — firmographics, pain points, buying triggers, objections
+- [ ] Step A: `icp_profiles` with `audience_model: b2b | b2c` — B2B: firmographics, buying triggers, objections; B2C: demographics, psychographics, buying occasions. Prompts branch on the model (demo tenant = b2c)
 - [ ] Step B: `personas` (2–4) derived from ICP
 - [ ] Consumes latest RESEARCH summaries (not raw SERP dumps)
 - [ ] `MODEL_DEEP` tier
+- [ ] Fixtures cover both audience models (Aurora Coffee b2c + one b2b tenant)
 
 ### Task 2.2: Strategy arm — angles & hooks
 
@@ -599,12 +611,23 @@ marketing-agent/
 - Modify: `src/arms/content/recommend.ts`, `src/adapters/copy-pack/generate.ts`, `src/api/routes/approvals.ts`
 
 - [ ] Every outbound link in drafts gets `utm_campaign=campaign_id&utm_content=draft_id` (applied in copy generation, always on)
-- [ ] `published_items` table: draft_id, platform, url (optional), published_at, mode (`copy_pack` | `browser` | `api`)
+- [ ] `published_items` table: draft_id, platform, url (optional), published_at, mode (`copy_pack` | `api`; `browser` value reserved)
 - [ ] `POST /tenants/:id/published-items` — **Mark as published** action from approvals/calendar (copy-pack flow has no other way to know a post went live)
-- [ ] Browser/API publish and email send create `published_items` automatically (wired in Phases 7–8)
+- [ ] API publish and email send create `published_items` automatically (wired in Phase 8)
 - [ ] Emit `item.published` event
 
-**Phase 3 gate:** recommend → (optional images) → approve → copy pack for social + email; visual briefs always; images only when toggle on; creation eval pass; **links carry UTM params; mark-as-published creates anchor row**.
+### Task 3.9: Thin approval UI (R1 requirement — do not wait for Phase 9)
+
+**Files:**
+- Create: `web/` minimal Vite + React app — `Approvals.tsx`, `Onboard.tsx`
+
+- [ ] Approval inbox: list pending drafts (copy + visual brief + image if any) → approve / edit / reject
+- [ ] Copy pack view: ready-to-paste output per approved item + **Mark as published** button
+- [ ] Simple onboarding form (`POST /tenants/:id/onboard`)
+- [ ] Deliberately ugly-but-usable; full dashboard is Phase 9 — the point is validating the approve-loop UX with a real tenant **now**
+- [ ] `frontend-visual-qa` light pass (desktop only)
+
+**Phase 3 gate:** recommend → (optional images) → approve → copy pack for social + email; visual briefs always; images only when toggle on; creation eval pass; **links carry UTM params; mark-as-published creates anchor row; a real user can run the whole approve loop in the thin UI**.
 
 ---
 
@@ -725,10 +748,10 @@ marketing-agent/
 
 - [ ] Schedule types: `social_post`, `email_send`
 - [ ] Soft schedule + reminder for both channels
-- [ ] Armed execution: social → browser/API; email → API only (when `api_email_enabled`)
+- [ ] Armed execution: social → official API; email → API only (when `api_email_enabled`); browser mode deferred (ADR-001)
 - [ ] States: `pending → reminded → executing → published | failed | skipped`
 - [ ] Checkpoint column: `last_step` for resume
-- [ ] Armed execution only when `browser_publish_enabled` or `api_publish_enabled` + item `armed`
+- [ ] Armed execution only when `api_publish_enabled` + creds valid + item `armed`
 
 ### Task 5.2: Calendar API
 
@@ -753,7 +776,7 @@ marketing-agent/
 
 - [ ] `engagement_items.type`: `comment` | `message` (DM)
 - [ ] Fields: platform, thread_id, inbound_text, draft_reply, status, privacy_flag
-- [ ] Input v1: manual paste of thread (comment or DM); later browser/API fetch
+- [ ] Input v1: manual paste of thread (comment or DM); later official API fetch
 - [ ] Output: reply draft → approval queue with visible kind
 - [ ] `assessRisk('reply_comment' | 'reply_message')` → always HIGH
 - [ ] Voice from tenant profile / personas
@@ -763,14 +786,14 @@ marketing-agent/
 
 - [ ] Same approve/edit/reject as posts
 - [ ] Copy pack default: paste into native comment box or DM inbox
-- [ ] Execute comment: `POST /publish/:approvalId/execute` when `api_reply_enabled` or browser armed
-- [ ] Execute DM: same endpoint when `api_dm_reply_enabled` or browser armed
+- [ ] Execute comment: `POST /publish/:approvalId/execute` when `api_reply_enabled` + armed
+- [ ] Execute DM: same endpoint when `api_dm_reply_enabled` + armed
 - [ ] Separate toggles so tenants can enable comments without enabling DMs
 
 ### Task 6.3: Adapter methods
 
 **Files:**
-- Modify: `src/adapters/types.ts`, API/browser stubs for Facebook + X
+- Modify: `src/adapters/types.ts`, API stubs for Facebook + X
 
 - [ ] `replyToComment` and `replyToMessage` on PlatformAdapter
 - [ ] Scaffold stubs fail gracefully until credentials + flag enabled
@@ -779,67 +802,17 @@ marketing-agent/
 
 ---
 
-## Phase 7 — OPS: Playwright browser publisher (human-like social)
+## Phase 7 — DEFERRED: browser publisher (ADR-001)
 
-**Goal:** Optional armed publish via **in-app Playwright** in the real website UI (organic reach; no social API). Checkpointed computer-use loop. Use **Playwright MCP** during this phase for selector QA and demos only.
+**Status: deferred post-v1 — do not implement.** See design §10.0 (ADR-001).
 
-**Why Playwright (not API):** Post like a human in Facebook/X/etc. so organic reach is not API-penalized. Aligns with Veeza computer-use: screenshot → reason → act; gate irreversible clicks; checkpoint long flows.
+**Why deferred:** automating Facebook/X web UIs violates platform ToS; bot detection risks **tenants'** accounts; human-like cadence code is deliberate detection evasion; storing tenant session cookies is the worst breach scenario in the system; and the "API posts get penalized organic reach" premise is unverified (Meta denies it).
 
-### Task 7.0: Playwright dependency + Docker browsers
+**What ships instead:** copy pack (default, zero risk) + official API adapters (Phase 8, opt-in).
 
-**Files:**
-- Update: `package.json`, `Dockerfile`, `docs/browser-session-setup.md`, `.env.example`
+**Revisit only when all three hold:** (1) measured tenant-level reach-penalty data, (2) a ToS-compliant execution path, (3) explicit tenant consent flow. Until then `browser_publish_enabled` stays a reserved flag and no `src/adapters/browser/` code is written.
 
-- [ ] Add `playwright` dependency; `npx playwright install` (chromium) in Docker image / CI
-- [ ] Env: `PLAYWRIGHT_HEADLESS=true`, `BROWSER_SESSION_DIR` (or DB-backed encrypted storage state)
-- [ ] Document: Playwright MCP (Cursor) for local flow verification — **never** load production tenant sessions into MCP
-- [ ] Worker container has enough shared memory for Chromium (`shm_size` in compose if needed)
-
-### Task 7.1: Browser adapter base (computer-use loop)
-
-**Files:**
-- Create: `src/adapters/browser/base.ts`, `playwright-pool.ts`, `session-store.ts`, `humanize.ts`
-
-- [ ] Screenshot → reason → act loop; **checkpoint after each UI step** (`last_step`, storage path)
-- [ ] Gate: `browser_publish_enabled` + approval + item `armed` + `permissions.canExecute`
-- [ ] Transient retry max 2; resume from `last_step` (do not restart 40-step flows from step 1)
-- [ ] Human-like delays / typing cadence (`humanize.ts`) — avoid instant paste bursts
-- [ ] Stop before irreversible Post/Share; confirm step logged to `agent_traces`
-- [ ] Per-tenant + platform **isolated** Playwright context (encrypted storage state)
-- [ ] Captcha / unexpected modal → user-fixable interrupt (not silent fail)
-
-### Task 7.2: Facebook browser publish
-
-**Files:**
-- Create: `src/adapters/browser/facebook.ts`, `docs/browser-session-setup.md`
-
-- [ ] Session setup wizard notes (human logs in once; agent stores storage state)
-- [ ] `publishPost` UI flow on **test page / staging** first
-- [ ] Validate selectors with **Playwright MCP** in Cursor before locking in code
-- [ ] Copy pack fallback if browser session expired
-
-### Task 7.3: X (Twitter) browser publish (scaffold)
-
-**Files:**
-- Create: `src/adapters/browser/twitter.ts`
-
-- [ ] Same interface as Facebook; scaffold + stub health check
-- [ ] Demo path optional if Facebook gate passes first
-
-### Task 7.4: Execute API + scheduler hook
-
-- [ ] `POST /publish/:approvalId/execute?mode=browser`
-- [ ] Scheduler path: armed + due → enqueue browser publish job (BullMQ)
-- [ ] Full `audit_log` + `system_events` + `agent_traces` on success/failure
-- [ ] Never silent: failures always surface in approval/calendar UI
-
-### Task 7.5: Phase gate with Playwright MCP
-
-- [ ] MCP smoke: open test page → walk publish selectors → confirm screenshots match adapter expectations
-- [ ] Product smoke: demo tenant arms a post → worker publishes via in-app Playwright
-- [ ] Simulated mid-flow crash → resume from checkpoint
-
-**Phase 7 gate:** Demo publish to test page via **in-app Playwright**; never silent; checkpoint resume works; MCP used only for QA notes, not as runtime.
+**Playwright MCP remains a dev/QA tool** for `frontend-visual-qa` on the dashboard (Phase 9) — never for product runtime.
 
 ---
 
@@ -871,6 +844,12 @@ marketing-agent/
 - [ ] `send_email` behind `api_email_enabled` flag + credentials wizard
 - [ ] HIGH risk: requires approval before send
 - [ ] Email send creates `published_items` row (MEASURE anchor)
+- [ ] **Compliance (design §21 — blocking before first real send):**
+  - [ ] `email_suppressions` table (unsubscribes, hard bounces, complaints); Publisher **refuses** suppressed addresses (harness gate)
+  - [ ] Unsubscribe link injected into every email; one-click; immediate suppression
+  - [ ] List import requires `consent_confirmed` attestation; refuse without it
+  - [ ] Footer template: tenant physical address + accurate From/Reply-To (collected at email-enable time)
+  - [ ] SPF / DKIM / DMARC setup docs; health check warns if missing
 
 ### Task 8.3b: Email metrics webhooks (MEASURE Tier 2)
 
@@ -880,6 +859,7 @@ marketing-agent/
 - [ ] SendGrid / Resend event webhooks → `post_metrics` (delivered, opens, clicks, bounces, unsubscribes)
 - [ ] Verify webhook signatures; reject unsigned payloads
 - [ ] Map events to `published_items` via message id stored at send time
+- [ ] Hard bounces + spam complaints auto-append to `email_suppressions`
 - [ ] Emit `metrics.imported` — first fully automated measured channel
 
 ### Task 8.4: Settings UI
@@ -887,7 +867,7 @@ marketing-agent/
 **Files:**
 - Create: `web/src/pages/PlatformSettings.tsx`
 
-- [ ] Toggles: `api_publish_enabled`, `api_reply_enabled`, `api_dm_reply_enabled`, `api_email_enabled`, `browser_publish_enabled`, `image_gen_enabled`
+- [ ] Toggles: `api_publish_enabled`, `api_reply_enabled`, `api_dm_reply_enabled`, `api_email_enabled`, `image_gen_enabled` (`browser_publish_enabled` reserved/hidden — ADR-001)
 - [ ] Credential form on enable; health check indicator
 
 **Phase 8 gate:** Enable API → enter creds → health check; publish still needs approval + execute.
@@ -989,17 +969,20 @@ Symlink or copy into `marketing-agent/.claude/skills/`:
 ## Execution order
 
 ```
-Phase 0 → 0.5
-       → 1 RESEARCH → 2 STRATEGY → 3 CREATION → 3.5 MEASURE
-       → 4–6 OPS (daily, schedule, engagement)
-       → 9 UI (parallel after Phase 3)
-       → 7–8 OPS publish adapters + email webhooks (parallel after Phase 3)
-       → 10 eval CI
+R1 (validation slice — one platform, copy pack only):
+  Phase 0 → 0.5 → 1 RESEARCH → 2 STRATEGY → 3 CREATION (+3.8, +3.9 thin UI) → 3.5 MEASURE
+  EXIT: a real tenant approves content weekly for 2+ weeks
+
+R2 (operations):
+  Phases 4–6 OPS (daily, schedule, engagement) → 9 full dashboard → 10 eval CI
+
+R3 (automation, opt-in):
+  Phase 8 official API adapters + email send + compliance + webhooks
+
+Deferred: Phase 7 browser publisher (ADR-001)
 ```
 
-**MVP demo:** Phases 0 → 0.5 → 1 → 2 → 3 → 3.5 → 4 → 5 → 6 → 9 → 10 (full five-pillar cycle with feedback loop).
-
-**Activation-ready:** Phases 7–8 (social browser + social/email API toggles).
+**Do not start R2 before R1's exit criterion is met** (design §23 release plan).
 
 ---
 
@@ -1016,8 +999,8 @@ Phase 0 → 0.5
 | **4** | **OPS** | Daily strategist (email + social, consumes insights) | Brief eval pass |
 | **5** | **OPS** | Scheduler (email + social) | No silent execute |
 | **6** | **OPS** | Comments + DM reply drafts | HIGH risk gate for both |
-| **7** | **OPS** | Playwright browser publisher (human-like) | Checkpointed UI publish + MCP QA |
-| **8** | **OPS** | API adapters (social + email) + email metrics webhooks | Toggle + cred wizard |
+| ~~7~~ | ~~OPS~~ | ~~Browser publisher~~ — deferred post-v1 (ADR-001) | — |
+| **8** | **OPS** | API adapters (social + email) + email compliance + metrics webhooks | Toggle + cred wizard + suppression gate |
 | **9** | UI | 5-pillar dashboard + Performance page + traces | frontend-visual-qa |
 | **10** | hardening | Eval CI | Full suite ≥ 90% |
 
@@ -1052,7 +1035,13 @@ Phase 0 → 0.5
 - [x] Multi-tenant throughout
 - [x] Approve before publish/reply (comments + DMs)
 - [x] One shared Postgres + `tenant_id` isolation (not DB-per-customer)
-- [x] API/browser scaffold + toggles
+- [x] API adapter scaffold + toggles (browser deferred — ADR-001)
+- [x] Postgres RLS + envelope encryption from Phase 0
+- [x] Release plan R1 → R2 → R3 with exit criteria
+- [x] ToS-safe competitor data tiers + provider adapter decision point
+- [x] Email compliance: suppression, unsubscribe, consent, SPF/DKIM/DMARC
+- [x] Unit economics: cost envelope + harness-enforced budget caps
+- [x] Thin approval UI in R1 (Task 3.9); B2B/B2C audience models; versioned prompts
 - [x] ship-loop gate per phase
 
 ---
@@ -1119,7 +1108,7 @@ Use this as the source-of-truth checklist. Every row must stay true before calli
 | Visual briefs | ✅ | Phase 3.2 |
 | Nano Banana / image gen (optional toggle) | ✅ | Phase 3.3–3.4 |
 | Approve / edit / reject before publish | ✅ | Phase 3.5 |
-| Copy pack (no API for organic by default) | ✅ | Phase 3.6 |
+| Copy pack default (zero account risk) | ✅ | Phase 3.6 |
 | Counter-campaign posts linked to alert | ✅ | Phase 3.1 |
 
 ### OPS
@@ -1132,8 +1121,9 @@ Use this as the source-of-truth checklist. Every row must stay true before calli
 | Private message / DM reply drafts | ✅ | Phase 6 (`type=message`) |
 | Separate toggles comments vs DMs | ✅ | `api_reply_enabled` / `api_dm_reply_enabled` |
 | No silent auto-reply | ✅ | HIGH risk + approval |
-| Browser publish (optional, **Playwright** human-like UI) | ✅ | Phase 7 (+ Playwright MCP for QA) |
-| API publish / reply / email (scaffold, off by default) | ✅ | Phase 8 |
+| Browser publish | **Deferred post-v1 (ADR-001)** | Design §10.0; flag reserved |
+| API publish / reply / email (scaffold, off by default) | ✅ | Phase 8 (R3) |
+| Email compliance (suppression, unsubscribe, consent) | ✅ | Phase 8.3 + design §21 |
 | Human gate on irreversible actions | ✅ | Global constraints |
 
 ### MEASURE
