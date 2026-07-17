@@ -1,28 +1,44 @@
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
+import { loadConfig } from './config/env.js';
+import { createDb } from './db/client.js';
+import { buildApp } from './api/app.js';
+import { createArmQueue, createRedis } from './queue/jobs.js';
+import { startArmWorker } from './queue/workers.js';
 
-const port = Number(process.env.PORT ?? 3001);
-const host = process.env.HOST ?? '0.0.0.0';
+// Load .env when present (Node 22 built-in); platforms may inject env directly.
+try {
+  process.loadEnvFile('.env');
+} catch {
+  /* no .env file — rely on the process environment */
+}
 
-const app = Fastify({ logger: true });
+const config = loadConfig();
+const db = createDb(config);
+const redis = createRedis(config.REDIS_URL);
+const queue = createArmQueue(config.REDIS_URL);
+const worker = startArmWorker(db, config.REDIS_URL);
 
-await app.register(cors, { origin: true });
+const app = await buildApp({
+  config,
+  db,
+  redis,
+  jobQueue: queue,
+  rateLimit: { max: 300, timeWindow: '1 minute' },
+});
 
-app.get('/health', async () => ({
-  status: 'ok',
-  service: 'marketing-agent-api',
-  version: '0.1.0',
-}));
-
-app.get('/api/v1/meta', async () => ({
-  architecture: 'supervised-crew',
-  pillars: ['research', 'strategy', 'creation', 'ops'],
-  crews: ['alex', 'sam', 'jordan', 'ops'],
-  note: 'Control plane UI — Phase 9. API scaffold — Phase 0.',
-}));
+async function shutdown(signal: string): Promise<void> {
+  app.log.info(`${signal} received — shutting down`);
+  await app.close();
+  await worker.close();
+  await queue.close();
+  await redis.quit();
+  await db.close();
+  process.exit(0);
+}
+process.on('SIGINT', () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
 
 try {
-  await app.listen({ port, host });
+  await app.listen({ port: config.PORT, host: config.HOST });
 } catch (err) {
   app.log.error(err);
   process.exit(1);
