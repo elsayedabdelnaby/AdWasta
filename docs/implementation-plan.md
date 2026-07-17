@@ -1,8 +1,8 @@
-# Marketing Agent — Implementation Plan
+# AdWasta — Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use `ship-loop` for every phase. Gate each phase: verify → simplify → independent review → structure review → runtime smoke → commit. Run eval suite where noted before phase sign-off.
 
-**Goal:** Ship a **Supervised Crew** marketing agent: thin Brain supervisor + specialist crews (Research, Strategy, Creation, Ops), four-pillar cycle, human-gated publish, production harness.
+**Goal:** Ship a **Supervised Crew** AdWasta: thin Brain supervisor + specialist crews (Research, Strategy, Creation, Ops), four-pillar cycle, human-gated publish, production harness.
 
 **Architecture (locked):** Supervisor Brain routes campaigns. **No chatty multi-agent.** Crews hand off typed `ArmResult` to DB. RESEARCH runs parallel; STRATEGY sequential; CREATION ReAct; OPS deterministic + human gates. Nine arms, four crews, lazy tools, model routing, evals, traces.
 

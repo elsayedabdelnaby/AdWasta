@@ -1,4 +1,4 @@
-# Marketing Agent — Design Spec
+# AdWasta — Design Spec
 
 **Status:** v3 — **Supervised Crew** (final architecture)  
 **Date:** 2026-07-16  
@@ -12,7 +12,7 @@
 
 ## 1. Problem & goal
 
-Build a **multi-tenant marketing agent** that runs the full marketing cycle for any business workspace:
+Build a **multi-tenant AdWasta** that runs the full marketing cycle for any business workspace:
 
 - Strategy: personas, positioning, marketing plan, messaging
 - Intelligence: trend radar + competitor deep analysis
@@ -31,7 +31,7 @@ Build a **multi-tenant marketing agent** that runs the full marketing cycle for 
 The product follows one end-to-end marketing cycle. Every arm and phase maps to a pillar. The Brain orchestrates the cycle; **ship-loop** gates each pillar before the next tranche of work ships.
 
 ```
-THE MARKETING AGENT
+THE AdWasta
 ├───────────────┬─────────────────┬──────────────┬────────────┐
 │ 1. RESEARCH   │ 2. STRATEGY     │ 3. CREATION  │ 4. OPS     │
 │ Market / SERP │ ICP / Personas  │ Copywriting  │ Email      │
@@ -277,7 +277,7 @@ CrewAI-style open collaboration. High token cost, handoff failures, demo-only re
 
 The harness is everything around the model: orchestration, tools, memory, context, state, errors, guardrails, verification, and observability. This table is the build checklist.
 
-| Harness component | Marketing agent implementation |
+| Harness component | AdWasta implementation |
 |-------------------|------------------------------|
 | **1. Orchestration loop** | Brain runs TAO (thought-action-observation) per arm; dumb loop, smart model |
 | **2. Tools** | Lazy-loaded per arm; schema-validated; sandboxed execution |

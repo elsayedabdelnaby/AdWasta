@@ -1,4 +1,4 @@
-# Marketing Agent — local & publish-ready stack
+# AdWasta — local & publish-ready stack
 # Usage: cp .env.example .env && docker compose up --build
 
 services:

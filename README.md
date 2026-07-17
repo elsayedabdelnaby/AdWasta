@@ -1,4 +1,4 @@
-# Marketing Agent — Supervised Crew
+# AdWasta — Supervised Crew
 
 Multi-tenant marketing AI: a **supervisor Brain** + specialist **crews** (not one mega-prompt, not chatty agents).
 

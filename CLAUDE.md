@@ -1,10 +1,10 @@
-# Marketing Agent — Claude Code instructions
+# AdWasta — Claude Code instructions
 
 @AGENTS.md
 
 ## Project
 
-Multi-tenant marketing agent: Eight Arms, One Brain.
+Multi-tenant AdWasta: Eight Arms, One Brain.
 
 Read `docs/design.md` before architectural changes.
 Follow `docs/implementation-plan.md` phase order.

@@ -1,4 +1,4 @@
-# API + worker image (Supervised Crew marketing agent)
+# API + worker image (Supervised Crew AdWasta)
 FROM node:22-alpine AS base
 WORKDIR /app
 RUN apk add --no-cache libc6-compat
