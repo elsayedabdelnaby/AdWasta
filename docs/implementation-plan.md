@@ -2,13 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: use `ship-loop` for every phase. Gate each phase: verify → simplify → independent review → structure review → runtime smoke → commit. Run eval suite where noted before phase sign-off.
 
-**Goal:** Ship a **Supervised Crew** AdWasta: thin Brain supervisor + specialist crews (Research, Strategy, Creation, Ops), four-pillar cycle, human-gated publish, production harness.
+**Goal:** Ship a **Supervised Crew** AdWasta: thin Brain supervisor + specialist crews (Research, Strategy, Creation, Ops, Measure), five-pillar cycle with a performance feedback loop, human-gated publish, production harness.
 
-**Architecture (locked):** Supervisor Brain routes campaigns. **No chatty multi-agent.** Crews hand off typed `ArmResult` to DB. RESEARCH runs parallel; STRATEGY sequential; CREATION ReAct; OPS deterministic + human gates. Nine arms, four crews, lazy tools, model routing, evals, traces.
+**Architecture (locked):** Supervisor Brain routes campaigns. **No chatty multi-agent.** Crews hand off typed `ArmResult` to DB. RESEARCH runs parallel; STRATEGY sequential; CREATION ReAct; OPS deterministic + human gates; MEASURE = deterministic stats pipeline + Analyst arm that interprets only. Ten arms, five crews, lazy tools, model routing, evals, traces.
 
 **Tech stack:** Node 22, TypeScript, Fastify, PostgreSQL, Drizzle, BullMQ, Redis, **Playwright** (in-app publish + MCP for QA), OpenRouter (routed tiers), Vite + React dashboard.
 
-**Design reference:** `docs/design.md` v3 — Supervised Crew, four pillars, harness, evals.
+**Design reference:** `docs/design.md` v3.1 — Supervised Crew, five pillars (incl. MEASURE §12.2), harness, evals.
 
 ## Locked architecture (do not change without ADR)
 
@@ -21,21 +21,23 @@
 | STRATEGY | Sequential: ICP → personas → angles → plan |
 | CREATION | ReAct inside Content arm; visual briefs; optional Nano Banana images |
 | OPS | Deterministic workflow; human approval before publish/reply/send |
+| MEASURE | Deterministic metrics pipeline in code (`src/metrics/`); **Analyst arm** interprets only; insights must cite `post_metrics` rows |
 | Publish default | Copy pack; **Playwright browser** / API toggled per tenant (organic prefer browser over API) |
 | Browser runtime | **Playwright in-app** (Phase 7); **Playwright MCP** for Cursor QA/demos only |
-| UI personas | Alex (Research), Sam (Strategy), Jordan (Creation), Ops |
+| UI personas | Alex (Research), Sam (Strategy), Jordan (Creation), Ops, Riley (Measure) |
 
 ## Marketing cycle — execution map
 
 Every implementation phase maps to one pillar. Ship-loop + pillar skills gate each phase.
 
 ```
-┌───────────────┬─────────────────┬──────────────┬────────────┐
-│ 1. RESEARCH   │ 2. STRATEGY     │ 3. CREATION  │ 4. OPS     │
-│ Market / SERP │ ICP / Personas  │ Copywriting  │ Email      │
-│ Competitors   │ Angles / Hooks  │ Visuals      │ Social     │
-└───────────────┴─────────────────┴──────────────┴────────────┘
-     Phase 1          Phase 2          Phase 3      Phases 4–8
+┌───────────────┬─────────────────┬──────────────┬────────────┬──────────────┐
+│ 1. RESEARCH   │ 2. STRATEGY     │ 3. CREATION  │ 4. OPS     │ 5. MEASURE   │
+│ Market / SERP │ ICP / Personas  │ Copywriting  │ Email      │ Metrics      │
+│ Competitors   │ Angles / Hooks  │ Visuals      │ Social     │ Insights     │
+└───────────────┴─────────────────┴──────────────┴────────────┴──────────────┘
+     Phase 1          Phase 2          Phase 3      Phases 4–8    Phase 3.5
+                                                                  (+ Phase 8 webhooks)
 ```
 
 | Phase | Pillar | Delivers | Skills at gate |
@@ -43,13 +45,14 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 | 0, 0.5 | (foundation) | Harness, DB, jobs, traces | ship-loop |
 | **1** | **RESEARCH** | Market/SERP + trends + competitors + **campaign watch/alerts** | grill-with-docs, ship-loop |
 | **2** | **STRATEGY** | ICP, personas, angles/hooks, plan + **counter-campaign angles** | grill-with-docs, ship-loop |
-| **3** | **CREATION** | Posts/campaign drafts + visuals + optional Nano Banana (+ counter posts) | frontend-visual-qa, ship-loop |
-| **4** | **OPS** | Daily strategist (email + social) | ship-loop |
+| **3** | **CREATION** | Posts/campaign drafts + visuals + optional Nano Banana (+ counter posts) + **UTM tagging + published_items anchor** | frontend-visual-qa, ship-loop |
+| **3.5** | **MEASURE** | Metrics schema + import, deterministic stats, Analyst arm + weekly job, angle scoring, feedback wiring | grill-with-docs, ship-loop |
+| **4** | **OPS** | Daily strategist (email + social, consumes `performance_insights`) | ship-loop |
 | **5** | **OPS** | Scheduler (email + social calendar) | ship-loop |
 | **6** | **OPS** | Comments + DM reply drafts | ship-loop |
 | **7** | **OPS** | Browser publisher via **Playwright** (human-like UI) | ship-loop + Playwright MCP QA |
 | **8** | **OPS** | API adapters (social + email, toggled) | ship-loop |
-| **9** | (UI) | 4-pillar dashboard + traces | frontend-visual-qa |
+| **9** | (UI) | 5-pillar dashboard + Performance page + traces | frontend-visual-qa |
 | **10** | (hardening) | Eval CI | ship-loop |
 
 ---
@@ -73,6 +76,10 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 - Crews do not share one LLM conversation thread
 - Intel snapshots require `citations[]`; fail eval without them
 - External web/social content is untrusted — sanitize before context injection
+- Every outbound link in drafts gets UTM params: `utm_campaign=campaign_id`, `utm_content=draft_id` (always on)
+- LLM never computes performance stats — engagement rate, CTR, deltas, baselines live in `src/metrics/` (code, unit-tested)
+- `performance_insights` must cite `post_metrics` row ids; below min sample (5 items per angle/format) → tagged `provisional` and excluded from Strategy/Creation prompts
+- Copy-pack publishes are anchored via **Mark as published** → `published_items` (no anchor, no metrics)
 - Eval deploy gate: ≥ 90% pass rate on golden fixtures before phase sign-off (where evals exist)
 - Max 10 ReAct steps per arm loop; max 2 retries on transient errors
 - Every LLM call logs to `agent_traces` (model, tokens, cost, latency)
@@ -106,12 +113,15 @@ marketing-agent/
 │   │   ├── research-orchestrator.ts
 │   │   └── daily-strategist.ts
 │   ├── crews/                    # UI personas + crew metadata
-│   │   ├── types.ts              # CrewId, persona names (Alex, Sam, Jordan)
+│   │   ├── types.ts              # CrewId, persona names (Alex, Sam, Jordan, Ops, Riley)
 │   │   └── roster.ts
 │   ├── memory/
 │   │   ├── types.ts              # 4 memory types
 │   │   ├── compaction.ts
 │   │   └── tenant-memory.ts
+│   ├── metrics/                  # MEASURE — deterministic (no LLM)
+│   │   ├── stats.ts              # rates, deltas, rolling baseline, min-sample
+│   │   └── import.ts             # manual/CSV + webhook ingestion
 │   ├── arms/
 │   │   ├── market/               # RESEARCH — SERP / keywords
 │   │   ├── trends/
@@ -119,7 +129,8 @@ marketing-agent/
 │   │   ├── strategy/             # STRATEGY — ICP, personas, angles
 │   │   ├── content/              # CREATION — copy + visual briefs
 │   │   ├── scheduler/
-│   │   └── engagement/
+│   │   ├── engagement/
+│   │   └── analyst/              # MEASURE — interprets stats, scores angles
 │   ├── adapters/
 │   │   ├── types.ts
 │   │   ├── registry.ts
@@ -165,10 +176,11 @@ marketing-agent/
 │   └── api/routes/
 ├── web/
 │   ├── src/pages/
-│   │   ├── Dashboard.tsx         # 4-pillar overview
+│   │   ├── Dashboard.tsx         # 5-pillar overview
 │   │   ├── Approvals.tsx
 │   │   ├── Intel.tsx
 │   │   ├── Calendar.tsx
+│   │   ├── Performance.tsx       # metrics, KPI progress, insights, angle scores
 │   │   ├── PlatformSettings.tsx
 │   │   └── Traces.tsx
 ├── seeds/
@@ -580,7 +592,92 @@ marketing-agent/
 - [ ] LLM-as-judge (deep tier, separate call)
 - [ ] Creation eval ≥ 90%
 
-**Phase 3 gate:** recommend → (optional images) → approve → copy pack for social + email; visual briefs always; images only when toggle on; creation eval pass.
+### Task 3.8: UTM tagging + published-item anchor (MEASURE prerequisite)
+
+**Files:**
+- Create: `src/db/schema/published-items.ts`
+- Modify: `src/arms/content/recommend.ts`, `src/adapters/copy-pack/generate.ts`, `src/api/routes/approvals.ts`
+
+- [ ] Every outbound link in drafts gets `utm_campaign=campaign_id&utm_content=draft_id` (applied in copy generation, always on)
+- [ ] `published_items` table: draft_id, platform, url (optional), published_at, mode (`copy_pack` | `browser` | `api`)
+- [ ] `POST /tenants/:id/published-items` — **Mark as published** action from approvals/calendar (copy-pack flow has no other way to know a post went live)
+- [ ] Browser/API publish and email send create `published_items` automatically (wired in Phases 7–8)
+- [ ] Emit `item.published` event
+
+**Phase 3 gate:** recommend → (optional images) → approve → copy pack for social + email; visual briefs always; images only when toggle on; creation eval pass; **links carry UTM params; mark-as-published creates anchor row**.
+
+---
+
+## Phase 3.5 — MEASURE pillar (metrics + analyst feedback loop)
+
+**Goal:** Close the loop: ingest performance metrics, compute stats deterministically, and have the Analyst arm turn them into insights that feed STRATEGY, CREATION, and the daily brief. Design reference: §12.2.
+
+**Skills at gate:** `grill-with-docs` (insights vs actual metric rows), `ship-loop`.
+
+### Task 3.5.1: Metrics schema + import
+
+**Files:**
+- Create: `src/db/schema/post-metrics.ts`, `src/metrics/import.ts`, `src/api/routes/metrics.ts`
+
+- [ ] `post_metrics`: published_item_id, captured_at, impressions, reach, likes, comments, shares, clicks, saves, video_views, opens, bounces, unsubscribes (nullable per channel)
+- [ ] Multiple captures per item allowed (time series)
+- [ ] `POST /tenants/:id/metrics/import` — manual entry (JSON) + CSV upload (Meta Business Suite / X Analytics export mapping)
+- [ ] Validation: metrics must reference an existing `published_items` row
+- [ ] Emit `metrics.imported`
+
+### Task 3.5.2: Deterministic stats module (no LLM)
+
+**Files:**
+- Create: `src/metrics/stats.ts`
+
+- [ ] Engagement rate (interactions ÷ reach), CTR, open/click rate per item
+- [ ] Rolling tenant baseline per platform + noise band
+- [ ] Deltas vs baseline; group by angle, format, posting time
+- [ ] Min-sample check: n ≥ 5 published items per angle/format, else group flagged `insufficient_sample`
+- [ ] Pure functions with unit tests — **the LLM never does this arithmetic**
+
+### Task 3.5.3: Analyst arm (Riley)
+
+**Files:**
+- Create: `src/arms/analyst/run.ts`, `prompts/analyst.ts`, `src/db/schema/performance-insights.ts`
+
+- [ ] Input: pre-computed stats from `src/metrics/stats.ts` only (never raw numbers to crunch, never platform HTML)
+- [ ] Output: `performance_insights` — winning/losing angles, hooks, formats, timing; **every claim cites `post_metrics` row ids**
+- [ ] Updates `messaging_angles.performance_score`; weak angles retired with a stated reason
+- [ ] Groups below min sample → insight tagged `provisional`, excluded from downstream prompts
+- [ ] `MODEL_BALANCED` tier; lazy tools: `read_metric_stats`, `read_published_items`, `read_angles`, `write_insights`, `update_angle_scores`
+
+### Task 3.5.4: Cadence + API
+
+**Files:**
+- Modify: `src/queue/jobs.ts`; Create: `src/api/routes/insights.ts`
+
+- [ ] BullMQ weekly repeatable job per tenant (respect `measure_enabled`) + trigger after metrics import
+- [ ] `POST /tenants/:id/analyst/run` — on-demand run
+- [ ] `GET /tenants/:id/insights` — latest insights; `GET /tenants/:id/performance` — metrics + KPI progress + angle scores
+- [ ] Emit `insight.generated`, `angle.score_updated`
+
+### Task 3.5.5: Feedback wiring (closing the loop)
+
+**Files:**
+- Modify: `src/arms/strategy/angles.ts`, `src/arms/content/recommend.ts`, `src/brain/daily-strategist.ts`
+
+- [ ] Strategy prompts include top/bottom performing angles (with scores) when regenerating
+- [ ] Content prompts include a "what worked" summary ≤ ~300 tokens from latest insights
+- [ ] Daily strategist loads latest `performance_insights` (replaces the unsourced "performance notes")
+- [ ] KPI taxonomy enforced: `marketing_plans` KPIs restricted to awareness / engagement / traffic / conversion / email classes (design §12.2)
+
+### Task 3.5.6: MEASURE evals
+
+**Files:**
+- Create: `evals/fixtures/measure/`
+
+- [ ] Fixture with planted winner + loser across ≥ 5 items per angle → Analyst must identify both and cite the correct `post_metrics` rows
+- [ ] Fixture below sample threshold → Analyst must refuse conclusions (`provisional` only)
+- [ ] Insights without citations fail
+- [ ] Measure eval ≥ 90%
+
+**Phase 3.5 gate:** import metrics → stats computed in code → Analyst insights cite rows → angle scores update → Strategy/Content prompts show performance context; planted-winner eval passes; no insight below sample threshold.
 
 ---
 
@@ -593,9 +690,9 @@ marketing-agent/
 **Files:**
 - Create: `src/brain/daily-strategist.ts`, `src/db/schema/daily-briefs.ts`
 
-- [ ] Load profile, plan, intel summaries, approvals, calendar
+- [ ] Load profile, plan, intel summaries, approvals, calendar, **latest `performance_insights` (Phase 3.5)**
 - [ ] Parallel intel refresh if stale > 24h
-- [ ] Output: email priorities + social priorities + **open competitor alerts** + counter-campaign CTA
+- [ ] Output: email priorities + social priorities + **open competitor alerts** + counter-campaign CTA + performance highlights (what to double down on / drop)
 - [ ] Trigger content arm if queue thin
 - [ ] Trigger competitor watch if stale > watch interval
 - [ ] `MODEL_BALANCED` tier
@@ -773,6 +870,17 @@ marketing-agent/
 - [ ] SMTP / SendGrid / Resend scaffold
 - [ ] `send_email` behind `api_email_enabled` flag + credentials wizard
 - [ ] HIGH risk: requires approval before send
+- [ ] Email send creates `published_items` row (MEASURE anchor)
+
+### Task 8.3b: Email metrics webhooks (MEASURE Tier 2)
+
+**Files:**
+- Create: `src/api/routes/webhooks.ts`; Modify: `src/metrics/import.ts`
+
+- [ ] SendGrid / Resend event webhooks → `post_metrics` (delivered, opens, clicks, bounces, unsubscribes)
+- [ ] Verify webhook signatures; reject unsigned payloads
+- [ ] Map events to `published_items` via message id stored at send time
+- [ ] Emit `metrics.imported` — first fully automated measured channel
 
 ### Task 8.4: Settings UI
 
@@ -795,10 +903,11 @@ marketing-agent/
 **Files:**
 - Create: `web/` Vite + React
 
-- [ ] Pages: Dashboard (4 pillars + crew activity: Alex / Sam / Jordan / Ops)
+- [ ] Pages: Dashboard (5 pillars + crew activity: Alex / Sam / Jordan / Ops / Riley)
 - [ ] **Activity** page: live feed from `GET /tenants/:id/events`
 - [ ] **Campaign** page: run proactive + counter-campaign from alert
 - [ ] **Research / Alerts** page: intel + competitor_alerts
+- [ ] **Performance** page: metrics, KPI progress, insights, angle scores; manual entry + CSV import; **Mark as published** on approvals/calendar
 - [ ] Approvals, Calendar, Engagement (comments + DMs), Platform Settings, Traces, Audit
 - [ ] Poll `GET /jobs/:id` for long-running arm operations
 
@@ -872,6 +981,7 @@ Symlink or copy into `marketing-agent/.claude/skills/`:
 - Industry: specialty coffee DTC
 - Platforms: Facebook, X
 - 2 named competitors
+- 6+ seeded `published_items` with `post_metrics` containing a planted winning angle and a losing one (drives Analyst demo + Phase 3.5 evals)
 - `npm run db:seed`
 
 ---
@@ -880,20 +990,20 @@ Symlink or copy into `marketing-agent/.claude/skills/`:
 
 ```
 Phase 0 → 0.5
-       → 1 RESEARCH → 2 STRATEGY → 3 CREATION
+       → 1 RESEARCH → 2 STRATEGY → 3 CREATION → 3.5 MEASURE
        → 4–6 OPS (daily, schedule, engagement)
        → 9 UI (parallel after Phase 3)
-       → 7–8 OPS publish adapters (parallel after Phase 3)
+       → 7–8 OPS publish adapters + email webhooks (parallel after Phase 3)
        → 10 eval CI
 ```
 
-**MVP demo:** Phases 0 → 0.5 → 1 → 2 → 3 → 4 → 5 → 6 → 9 → 10 (full four-pillar cycle).
+**MVP demo:** Phases 0 → 0.5 → 1 → 2 → 3 → 3.5 → 4 → 5 → 6 → 9 → 10 (full five-pillar cycle with feedback loop).
 
 **Activation-ready:** Phases 7–8 (social browser + social/email API toggles).
 
 ---
 
-## Phase summary (aligned with design v2)
+## Phase summary (aligned with design v3.1)
 
 | Phase | Pillar | Delivers | Gate |
 |-------|--------|----------|------|
@@ -901,13 +1011,14 @@ Phase 0 → 0.5
 | **0.5** | foundation | Routing, ReAct, memory, risk, sanitizer | Unit tests |
 | **1** | **RESEARCH** | Market/SERP + trend + competitor + campaign watch/alerts | Research eval ≥ 90% |
 | **2** | **STRATEGY** | ICP, personas, angles/hooks, plan + counter-campaign | Strategy eval ≥ 90% |
-| **3** | **CREATION** | Posts/campaigns + visual briefs + optional Nano Banana + approvals | Creation eval ≥ 90% |
-| **4** | **OPS** | Daily strategist (email + social) | Brief eval pass |
+| **3** | **CREATION** | Posts/campaigns + visual briefs + optional Nano Banana + approvals + UTM + `published_items` | Creation eval ≥ 90% |
+| **3.5** | **MEASURE** | Metrics import, deterministic stats, Analyst insights, angle scoring, feedback wiring | Measure eval ≥ 90%; planted winner cited |
+| **4** | **OPS** | Daily strategist (email + social, consumes insights) | Brief eval pass |
 | **5** | **OPS** | Scheduler (email + social) | No silent execute |
 | **6** | **OPS** | Comments + DM reply drafts | HIGH risk gate for both |
 | **7** | **OPS** | Playwright browser publisher (human-like) | Checkpointed UI publish + MCP QA |
-| **8** | **OPS** | API adapters (social + email) | Toggle + cred wizard |
-| **9** | UI | 4-pillar dashboard + traces | frontend-visual-qa |
+| **8** | **OPS** | API adapters (social + email) + email metrics webhooks | Toggle + cred wizard |
+| **9** | UI | 5-pillar dashboard + Performance page + traces | frontend-visual-qa |
 | **10** | hardening | Eval CI | Full suite ≥ 90% |
 
 ---
@@ -915,8 +1026,8 @@ Phase 0 → 0.5
 ## Self-review checklist
 
 - [x] Supervised Crew architecture (not chatty multi-agent)
-- [x] Campaign pipeline RESEARCH → STRATEGY → CREATION → approve → OPS
-- [x] Crew personas (Alex, Sam, Jordan) in traces/UI
+- [x] Campaign pipeline RESEARCH → STRATEGY → CREATION → approve → OPS → MEASURE
+- [x] Crew personas (Alex, Sam, Jordan, Ops, Riley) in traces/UI
 - [x] Market/SERP arm explicit in Phase 1
 - [x] ICP + messaging_angles in Phase 2
 - [x] Visual briefs + email copy in Phase 3
@@ -934,6 +1045,10 @@ Phase 0 → 0.5
 - [x] Lazy tools per arm
 - [x] Competitor campaign watch + alerts + counter-campaign pipeline
 - [x] Creating posts/campaigns via CREATION + campaign/run
+- [x] MEASURE pillar: `published_items` + `post_metrics` + Analyst arm (Phase 3.5)
+- [x] Deterministic stats in code; LLM interprets only; insights cite metric rows
+- [x] UTM tagging on all draft links; mark-as-published anchor for copy pack
+- [x] Feedback loop into Strategy angles, Content prompts, daily brief
 - [x] Multi-tenant throughout
 - [x] Approve before publish/reply (comments + DMs)
 - [x] One shared Postgres + `tenant_id` isolation (not DB-per-customer)
@@ -952,7 +1067,7 @@ Use this as the source-of-truth checklist. Every row must stay true before calli
 |-------------|----------|---------------|
 | Supervised Crew (not chatty multi-agent) | ✅ | Locked architecture + Phase 0.5.6 |
 | Thin Brain supervisor | ✅ | `supervisor.ts`, campaign pipeline |
-| Four pillars: Research → Strategy → Creation → Ops | ✅ | Execution map + Phases 1–8 |
+| Five pillars: Research → Strategy → Creation → Ops → Measure | ✅ | Execution map + Phases 1–8 + 3.5 |
 | Personas Alex / Sam / Jordan / Ops | ✅ | `crews/roster.ts`, Phase 9 UI |
 | Typed `ArmResult` handoffs to DB | ✅ | Global constraints + Phase 0.5 |
 | Min(Input)→Max(Output) / lazy tools | ✅ | Tool registry Phase 0.9 |
@@ -1020,6 +1135,21 @@ Use this as the source-of-truth checklist. Every row must stay true before calli
 | Browser publish (optional, **Playwright** human-like UI) | ✅ | Phase 7 (+ Playwright MCP for QA) |
 | API publish / reply / email (scaffold, off by default) | ✅ | Phase 8 |
 | Human gate on irreversible actions | ✅ | Global constraints |
+
+### MEASURE
+
+| Requirement | Covered? | Where |
+|-------------|----------|-------|
+| Published-item anchor (mark as published) | ✅ | Phase 3.8 |
+| UTM tagging on all draft links | ✅ | Phase 3.8 |
+| Manual / CSV metrics import | ✅ | Phase 3.5.1 |
+| Deterministic stats — no LLM arithmetic | ✅ | Phase 3.5.2 |
+| Analyst insights cite `post_metrics` rows | ✅ | Phase 3.5.3 + evals |
+| Min-sample guardrail (`provisional` below n=5) | ✅ | Phase 3.5.2–3.5.3 |
+| Angle performance scoring feeds Strategy | ✅ | Phase 3.5.5 |
+| Daily brief consumes insights | ✅ | Phase 3.5.5 / 4.1 |
+| Email webhook metrics (automated) | ✅ | Phase 8.3b |
+| Own-page Graph API insights / GA4 | Post-v1 | Design §12.2 tiers 3–4 |
 
 ### Control plane UI
 

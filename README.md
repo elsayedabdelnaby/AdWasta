@@ -23,14 +23,15 @@ Human idea → Brain (supervisor) → RESEARCH crew → STRATEGY crew → CREATI
 | **Sam** | ICP, Personas, Angles, Plan (+ counter-campaign) | STRATEGY |
 | **Jordan** | Posts/campaigns + visual briefs (+ Nano Banana when enabled) | CREATION |
 | **Ops** | Daily brief, Schedule, Engagement (comments + DMs), Publish | OPS |
+| **Riley** | Performance insights from metrics (deterministic stats + analysis) | MEASURE |
 
-## Four pillars
+## Five pillars
 
 ```
-RESEARCH          STRATEGY           CREATION           OPS
-Market / SERP     ICP / Personas     Copywriting        Email
-Competitors       Angles / Hooks     Visuals + images   Social
-                                     (Nano Banana opt.)
+RESEARCH          STRATEGY           CREATION           OPS          MEASURE
+Market / SERP     ICP / Personas     Copywriting        Email        Metrics
+Competitors       Angles / Hooks     Visuals + images   Social       Insights
+                                     (Nano Banana opt.)              ↺ feeds Strategy
 ```
 
 ## Publish modes (per tenant, per platform)
@@ -46,7 +47,7 @@ Competitors       Angles / Hooks     Visuals + images   Social
 
 | Document | Purpose |
 |----------|---------|
-| [docs/design.md](./docs/design.md) | v3 — Supervised Crew, harness, evals, locked decisions |
+| [docs/design.md](./docs/design.md) | v3.1 — Supervised Crew, five pillars (incl. MEASURE), harness, evals, locked decisions |
 | [docs/implementation-plan.md](./docs/implementation-plan.md) | Phased build (Phase 0–10) |
 
 ## Principles
@@ -54,6 +55,7 @@ Competitors       Angles / Hooks     Visuals + images   Social
 - **Organic first** — copy pack or Playwright UI publish; API optional and off by default
 - **Harness is the product** — traces, evals, permissions, checkpoints
 - **Human keeps judgment** — approve before publish/reply/send
+- **Closed loop** — metrics feed insights; insights feed the next strategy and content round
 - **ship-loop** — gate every implementation phase
 - **Min(Input)→Max(Output)** — minimum context per specialist
 

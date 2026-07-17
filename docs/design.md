@@ -1,7 +1,7 @@
 # AdWasta — Design Spec
 
-**Status:** v3 — **Supervised Crew** (final architecture)  
-**Date:** 2026-07-16  
+**Status:** v3.1 — **Supervised Crew + MEASURE pillar**  
+**Date:** 2026-07-17 (v3: 2026-07-16)  
 **Codename:** Supervised Crew — One Brain, Specialist Team
 
 **Informed by:** [Agent Harness anatomy](https://blog.dailydoseofds.com/p/the-anatomy-of-an-agent-harness), [Agentic AI Engineer roadmap](https://youmind.com/landing/x-viral-articles/agentic-ai-engineer-roadmap-guide), [Min(Input)→Max(Output)](https://ahmedhesham.dev/blog/min-input-max-output/), Veeza computer-use production lessons, repo `skills/` ship-loop.
@@ -19,6 +19,7 @@ Build a **multi-tenant AdWasta** that runs the full marketing cycle for any busi
 - Content: post recommendations with **approve / edit / reject**
 - Operations: daily cross-platform strategy, scheduling, comment **and private message (DM)** reply drafts
 - Execution: **human-gated** publish paths optimized for organic reach
+- Measurement: post/email metrics + performance insights that feed back into strategy and content (the agent learns per tenant)
 
 **Success looks like:** A user creates a tenant (brand workspace), onboards their business once, and gets daily actionable marketing output — with every external action gated behind explicit approval and a chosen publish mode.
 
@@ -26,17 +27,19 @@ Build a **multi-tenant AdWasta** that runs the full marketing cycle for any busi
 
 ---
 
-## 1.1 Marketing cycle — four pillars
+## 1.1 Marketing cycle — five pillars
 
-The product follows one end-to-end marketing cycle. Every arm and phase maps to a pillar. The Brain orchestrates the cycle; **ship-loop** gates each pillar before the next tranche of work ships.
+The product follows one end-to-end marketing cycle. Every arm and phase maps to a pillar. The Brain orchestrates the cycle; **ship-loop** gates each pillar before the next tranche of work ships. MEASURE closes the loop: performance feeds the next STRATEGY / CREATION round.
 
 ```
 THE AdWasta
-├───────────────┬─────────────────┬──────────────┬────────────┐
-│ 1. RESEARCH   │ 2. STRATEGY     │ 3. CREATION  │ 4. OPS     │
-│ Market / SERP │ ICP / Personas  │ Copywriting  │ Email      │
-│ Competitors   │ Angles / Hooks  │ Visuals      │ Social     │
-└───────────────┴─────────────────┴──────────────┴────────────┘
+├───────────────┬─────────────────┬──────────────┬────────────┬──────────────┐
+│ 1. RESEARCH   │ 2. STRATEGY     │ 3. CREATION  │ 4. OPS     │ 5. MEASURE   │
+│ Market / SERP │ ICP / Personas  │ Copywriting  │ Email      │ Metrics      │
+│ Competitors   │ Angles / Hooks  │ Visuals      │ Social     │ Insights     │
+└───────────────┴─────────────────┴──────────────┴────────────┴──────────────┘
+        ▲                                                            │
+        └──────────── performance_insights feed back ────────────────┘
 ```
 
 ### Pillar → capability map
@@ -56,6 +59,8 @@ THE AdWasta
 | **4. OPS** | Email operations | **Scheduler** + **Publisher** (email adapters) | schedules, copy packs, optional send |
 | | Social operations | **Scheduler** + **Engagement** + **Publisher** | posts, **comment + DM replies**, calendar |
 | | Daily coordination | **Daily strategist** | `daily_briefs` (email + social priorities) |
+| **5. MEASURE** | Metrics ingestion | **Metrics pipeline** (deterministic, code — not LLM) | `published_items`, `post_metrics` |
+| | Performance insights | **Analyst** arm (Riley) | `performance_insights`, angle performance scores |
 
 ### Cycle execution order (per tenant)
 
@@ -64,9 +69,11 @@ ONBOARD → RESEARCH (market + trend + competitor, parallel)
        → STRATEGY (ICP → personas → angles/hooks → plan)
        → CREATION (copy + visual briefs [+ optional Nano Banana images] → approval inbox)
        → OPS (daily brief → schedule → engage → publish when approved)
+       → MEASURE (mark published → ingest metrics → weekly Analyst insights)
+              ↳ insights feed the next STRATEGY / CREATION round + daily brief
 ```
 
-Re-run **RESEARCH** on a schedule (24h staleness) or on demand. **CREATION** consumes latest RESEARCH + STRATEGY only — never stale angles or intel.
+Re-run **RESEARCH** on a schedule (24h staleness) or on demand. **CREATION** consumes latest RESEARCH + STRATEGY only — never stale angles or intel. **MEASURE** runs weekly per tenant plus on-demand after a metrics import (see §12.2).
 
 ### Skills per pillar (repo `skills/`)
 
@@ -76,6 +83,7 @@ Re-run **RESEARCH** on a schedule (24h staleness) or on demand. **CREATION** con
 | STRATEGY | `grill-with-docs`, ship-loop gate |
 | CREATION | `frontend-visual-qa` (draft + image previews), ship-loop gate |
 | OPS | `frontend-visual-qa` (inbox + calendar), ship-loop gate, human approval gate |
+| MEASURE | `grill-with-docs` (insights vs actual metric rows), ship-loop gate |
 
 ---
 
@@ -130,6 +138,11 @@ Agents “talking to each other” in a shared thread causes coordination overhe
         │ CREW: OPS            │
         │ Daily · Schedule     │
         │ Engage · Publish     │
+        └───────────┬──────────┘
+                    ▼
+        ┌──────────────────────┐
+        │ CREW: MEASURE        │
+        │ Metrics · Insights   │──▶ feeds back into STRATEGY / CREATION
         └──────────────────────┘
 ```
 
@@ -143,6 +156,7 @@ Same harness underneath; friendly names in the dashboard:
 | **Sam** | Persona & Strategy Lead | Strategy (ICP → personas → angles → plan) | STRATEGY |
 | **Jordan** | Expert Copywriter + visual director | Content (copy + visual briefs) → optional Image adapter | CREATION |
 | **Ops** | Campaign operator | Daily strategist, Scheduler, Engagement, Publisher | OPS |
+| **Riley** | Performance Analyst | Analyst (interprets deterministic stats; scores angles) | MEASURE |
 
 The Brain is not a persona — it is the **supervisor runtime** (orchestrator + permissions + traces).
 
@@ -165,6 +179,7 @@ Specialists never pass chat logs. They pass **`ArmResult`**:
 | STRATEGY | **Sequential** plan-and-execute (ICP → personas → angles → plan) | Each step depends on prior |
 | CREATION | **Single** ReAct loop (copy → visual brief → optional image gen) | Tight coupling within one deliverable |
 | OPS | **Deterministic** workflow + human gates | Irreversible actions need control |
+| MEASURE | **Deterministic** stats pipeline + single Analyst pass | Stats computed in code; LLM interprets only — never does arithmetic |
 
 ---
 
@@ -184,7 +199,10 @@ These are final — do not revisit without strong evidence.
 | Image gen | Nano Banana optional; Jordan writes prompt | Pixels ≠ copy; toggle off by default |
 | Permissions | Harness enforces; model only proposes | Anthropic separation pattern |
 | Multi-tenancy | Day one | Product requirement |
-| UI | 4-pillar + crew personas + **tenant feature toggles** | Matches mental model |
+| UI | 5-pillar + crew personas + **tenant feature toggles** | Matches mental model |
+| Measurement | Deterministic metrics pipeline + LLM Analyst (interprets only) | Model never does arithmetic; insights cite metric rows |
+| Metrics ingestion | Manual/CSV first; email webhooks Phase 8; own-page Graph API post-v1 | Universal v1; automate only ToS-safe sources |
+| UTM tagging | Always on for every link in drafts | Free now; enables conversion attribution later |
 
 ---
 
@@ -205,13 +223,14 @@ Multi-tenant from day one: every toggle and credential is scoped to `tenant_id`.
 
 | Page | Purpose |
 |------|---------|
-| **Dashboard** | 4-pillar overview + crew activity (Alex / Sam / Jordan / Ops) |
+| **Dashboard** | 5-pillar overview + crew activity (Alex / Sam / Jordan / Ops / Riley) |
 | **Activity** | Full event stream (`system_events`) — filters by category / severity |
 | **Research** | Intel snapshots + **competitor alerts** |
 | **Campaign** | Start campaign / **counter-campaign from alert**; pipeline status |
 | **Strategy** | ICP, personas, angles, plan (edit + re-run) |
 | **Creation** | Draft queue — approve / edit / reject |
-| **Calendar** | Email + social schedule |
+| **Calendar** | Email + social schedule + **Mark as published** action |
+| **Performance** | Post/email metrics, KPI progress, `performance_insights`, angle scores; manual metrics entry + CSV import |
 | **Engagement** | Comment + **DM / inbox message** reply drafts |
 | **Platform settings** | Per-platform feature toggles + credentials |
 | **Traces** | Cost, latency, errors per run (`agent_traces`) |
@@ -231,6 +250,7 @@ Customers activate only what they need. Turning a feature **on** opens a credent
 | `daily_brief_enabled` | On | Ops daily brief cron |
 | `scheduler_enabled` | On | Calendar + reminders |
 | `engagement_enabled` | On | Comment + DM reply draft generation |
+| `measure_enabled` | On | Metrics ingestion + weekly Analyst run + angle scoring |
 | `browser_publish_enabled` | Off | Armed **Playwright** publish in native web UI (organic) |
 | `api_publish_enabled` | Off | Social API publish + credential form |
 | `api_reply_enabled` | Off | API replies on **public comments** |
@@ -259,7 +279,7 @@ One LLM loop with all tools. Fast to demo; fails on quality and context at scale
 
 ### Option B — Supervised Crew + thin Brain ✅ **Selected**
 
-Specialist **crews** (arms) with structured handoffs; Brain supervises routing only. Maps to production harness, four pillars, and industry multi-agent best practice without chatty coordination.
+Specialist **crews** (arms) with structured handoffs; Brain supervises routing only. Maps to production harness, five pillars, and industry multi-agent best practice without chatty coordination.
 
 ### Option C — Event-driven microservices ❌ Deferred
 
@@ -269,7 +289,7 @@ Scale later if needed; overkill for v1.
 
 CrewAI-style open collaboration. High token cost, handoff failures, demo-only reliability.
 
-**Final stack:** Option B — Supervised Crew implemented as Brain + nine arms + harness (traces, evals, guardrails, memory).
+**Final stack:** Option B — Supervised Crew implemented as Brain + ten arms + harness (traces, evals, guardrails, memory).
 
 ---
 
@@ -289,7 +309,7 @@ The harness is everything around the model: orchestration, tools, memory, contex
 | **8. Error handling** | Four error classes with defined recovery (see §14) |
 | **9. Guardrails** | Risk assessor + approval inbox + tool permission layer separate from model |
 | **10. Verification loops** | Eval suite + ship-loop gate; deterministic checks over self-grading |
-| **11. Subagent orchestration** | Nine specialist arms in four crews; 1–2k token `ArmResult` handoffs |
+| **11. Subagent orchestration** | Ten specialist arms in five crews; 1–2k token `ArmResult` handoffs |
 
 **Harness thickness:** Keep the Brain thin. Arms own domain reasoning. Verification and permissions live in the harness, not in prompt hope.
 
@@ -338,6 +358,11 @@ flowchart TB
     Pub[Publisher]
   end
 
+  subgraph MeasureCrew["CREW: MEASURE"]
+    MP[Metrics pipeline — deterministic]
+    An[Analyst — Riley]
+  end
+
   subgraph Exec["Execution adapters"]
     CP[Copy pack]
     BR[Browser]
@@ -362,12 +387,15 @@ flowchart TB
   ResearchCrew & StrategyCrew & CreationCrew & OpsCrew --> Tools
   Brain --> Ctx
   Ctx --> Mem
-  ResearchCrew & StrategyCrew & CreationCrew & OpsCrew --> DB
+  ResearchCrew & StrategyCrew & CreationCrew & OpsCrew & MeasureCrew --> DB
   OpsCrew --> Exec
   Exec --> Vault
-  ResearchCrew & StrategyCrew & CreationCrew & OpsCrew --> Trace
+  Exec -->|published_items| MP
+  MP -->|computed stats| An
+  An -->|performance_insights| StrategyCrew & CreationCrew & D
+  ResearchCrew & StrategyCrew & CreationCrew & OpsCrew & MeasureCrew --> Trace
   Trace --> Obs
-  Eval --> ResearchCrew & StrategyCrew & CreationCrew
+  Eval --> ResearchCrew & StrategyCrew & CreationCrew & MeasureCrew
   Skills --> Brain
 ```
 
@@ -450,6 +478,9 @@ Every record is scoped by `tenant_id`. No cross-tenant reads.
 | `schedules` | Soft calendar entries + optional armed execution |
 | `engagement_items` | Inbound social threads: `type=comment` \| `type=message` (DM) + draft replies |
 | `daily_briefs` | Daily strategist output per tenant per day |
+| `published_items` | **MEASURE anchor**: one row per live post/email — draft_id, platform, url, published_at, mode (`copy_pack` \| `browser` \| `api`) |
+| `post_metrics` | Time-stamped metric captures per published item (impressions, reach, likes, comments, shares, clicks, opens, bounces…) — multiple captures = time series |
+| `performance_insights` | Analyst output: winning/losing angles, hooks, formats, timing — every claim cites `post_metrics` row ids |
 | `platform_connections` | Per-platform settings + publish mode + feature flags |
 | `credentials` | Encrypted tokens/secrets per tenant per platform |
 | `audit_log` | Compliance subset: approvals, credential changes, publish/send outcomes (append-only) |
@@ -493,6 +524,7 @@ Every significant action writes a `system_events` row:
 | **Guardrails** | Risk HIGH blocked, permission denied, sanitizer stripped content |
 | **Budget** | Daily budget warning / hard stop |
 | **Evals** | Eval suite started / passed / failed |
+| **Measure** | Item marked published, metrics imported, insight generated, angle score updated |
 
 ### `system_events` schema
 
@@ -575,7 +607,7 @@ Write events **synchronously in the same transaction** as the domain change when
 
 ---
 
-## 8. The nine arms (mapped to four pillars)
+## 8. The ten arms (mapped to five pillars)
 
 | # | Arm | Pillar | Responsibility | Primary outputs |
 |---|-----|--------|----------------|-----------------|
@@ -587,7 +619,8 @@ Write events **synchronously in the same transaction** as the domain change when
 | 6 | **Daily strategist** | OPS | Daily briefing across email + social | `daily_briefs` |
 | 7 | **Scheduler** | OPS | Calendar for email + social; reminders; armed windows | `schedules` |
 | 8 | **Engagement** | OPS | Comment **and DM** reply drafts (never silent auto-reply) | `engagement_items` → approval queue |
-| 9 | **Publisher** | OPS | Executes **approved** items via channel adapter | audit + status updates |
+| 9 | **Publisher** | OPS | Executes **approved** items via channel adapter | audit + status updates, `published_items` |
+| 10 | **Analyst** | MEASURE | Interprets deterministic stats; scores angles; produces insights (**never computes stats itself**) | `performance_insights`, angle scores |
 
 **Lazy-loaded tools per arm:**
 
@@ -602,8 +635,9 @@ Write events **synchronously in the same transaction** as the domain change when
 | Scheduler | `read_calendar`, `write_schedule`, `enqueue_execution` |
 | Engagement | `read_comments`, `read_messages`, `write_reply_draft` |
 | Publisher | `resolve_adapter`, `publish`, `replyToComment`, `replyToMessage`, `send_email` (when enabled) |
+| Analyst | `read_metric_stats` (pre-computed), `read_published_items`, `read_angles`, `write_insights`, `update_angle_scores` |
 
-Arms 1–8 are **read/analyze/draft**. Arm 9 is **execute** and only runs after approval + mode selection + permission check.
+Arms 1–8 are **read/analyze/draft**. Arm 9 is **execute** and only runs after approval + mode selection + permission check. Arm 10 is **read/interpret** — post-hoc analysis only, no external actions and no raw-number crunching (stats come pre-computed from `src/metrics/`).
 
 ### Handoff contract
 
@@ -991,12 +1025,83 @@ OPS schedule / publish
 
 ---
 
+## 12.2 MEASURE pillar — metrics + performance feedback loop
+
+**Principle (locked):** Two layers, kept strictly separate. A **deterministic metrics pipeline** (code) ingests numbers and computes stats; the **Analyst arm** (LLM) only interprets the computed stats. The model never does arithmetic and never estimates performance. This mirrors the existing "judge ≠ producer" and "harness permits, model proposes" separations.
+
+### Why
+
+Without measurement the agent is a content mill: it never learns which angles, hooks, formats, or timings work for a given tenant. `performance_insights` are the feedback signal that makes STRATEGY and CREATION improve per tenant over time — and the per-tenant data moat competitors cannot copy.
+
+### Layer 1 — deterministic metrics pipeline (`src/metrics/`)
+
+| Step | What |
+|------|------|
+| **Anchor** | `published_items` row per live post/email (draft_id, platform, url, published_at, mode). Created by **"Mark as published"** (copy pack), browser publish, API publish, or email send |
+| **Ingest** | Metric captures → `post_metrics`; multiple captures per item form a time series |
+| **Compute** | Engagement rate, CTR, open/click rate; deltas vs tenant rolling baseline; noise band; min-sample checks — all in code with unit tests, no LLM |
+
+**Copy-pack gap rule (non-negotiable):** the system cannot see copy-pack posts go live. The approval inbox and calendar include a **Mark as published** action (with optional post URL) that creates the `published_items` anchor. Without it there is nothing to attach metrics to.
+
+### Metric sources (tiered)
+
+| Tier | Source | When | Notes |
+|------|--------|------|-------|
+| 0 | **UTM tagging** on every draft link | Phase 3 (always on) | `utm_campaign=campaign_id`, `utm_content=draft_id`; free now, enables conversion attribution later |
+| 1 | **Manual entry / CSV import** | Phase 3.5 (v1 default) | Paste numbers or upload the Meta Business Suite / X Analytics export |
+| 2 | **Email webhooks** (SendGrid / Resend) | Phase 8 | Delivered / opens / clicks / bounces / unsubscribes — first fully automated channel |
+| 3 | **Own-page Graph API insights** | Post-v1 | Reading metrics for the tenant's **own** pages is ToS-safe (unlike competitor scraping) |
+| 4 | GA4 / landing-page analytics import | Post-v1 | Consumes Tier 0 UTM tags for conversion attribution |
+
+### Layer 2 — Analyst arm (Riley)
+
+- Input: **computed stats only** — never raw platform HTML, never raw-number crunching
+- Output: `performance_insights` — winning/losing angles, hooks, formats, posting times; **every claim cites `post_metrics` row ids** (same rule as intel citations)
+- Side effect: updates `messaging_angles.performance_score`; weak angles are retired with a stated reason, never silently
+- Cadence: weekly BullMQ job per tenant + on-demand after a metrics import
+- `MODEL_BALANCED` tier
+
+### Guardrails
+
+- **Min sample size:** no insight unless n ≥ 5 published items per angle/format **and** the delta beats the noise band vs the tenant's rolling baseline. Below threshold → insight tagged `provisional` and **excluded** from Strategy/Creation context
+- Insights without citations fail the eval gate (same as intel snapshots)
+- `measure_enabled` toggle (default on) controls ingestion + Analyst cron
+
+### KPI taxonomy (plans must use it)
+
+`marketing_plans` KPIs are constrained to this taxonomy so plan goals and measured numbers share one vocabulary:
+
+| KPI class | Metric |
+|-----------|--------|
+| Awareness | Impressions / reach |
+| Engagement | Engagement rate (interactions ÷ reach) |
+| Traffic | CTR |
+| Conversion | UTM-attributed events (Tier 4) |
+| Email | Open rate, click rate, unsubscribe rate |
+
+### Feedback wiring (closing the loop)
+
+1. **STRATEGY:** Sam's prompts include top/bottom performing angles when regenerating; scores live on `messaging_angles`
+2. **CREATION:** Jordan's context includes a "what worked" summary (≤ ~300 tokens) from the latest insights — consistent with min-sufficient-context
+3. **OPS:** the daily strategist reads the latest `performance_insights` (this is the source for the "performance notes" in §13)
+
+### Events
+
+| Action | Event |
+|--------|-------|
+| Item marked published | `item.published` |
+| Metrics imported | `metrics.imported` |
+| Insight generated | `insight.generated` |
+| Angle score updated | `angle.score_updated` |
+
+---
+
 ## 13. Daily strategist loop
 
 Runs once per tenant per day (cron or manual trigger):
 
 ```
-1. Load tenant profile + active plan + yesterday's performance notes
+1. Load tenant profile + active plan + latest `performance_insights` (MEASURE, §12.2)
 2. Parallel: refresh trend + competitor intel if stale > 24h
 3. Brain synthesizes daily_brief:
    - Priority platforms today
@@ -1085,6 +1190,7 @@ Maintain `evals/fixtures/` per arm with demo tenant scenarios:
 - Competitor: structured gaps; cites sources
 - Content: on-brand voice; platform-appropriate length
 - Daily brief: references real scheduled items, not invented ones
+- Analyst: fixture with a planted winner/loser → must identify both, cite the right `post_metrics` rows, and refuse conclusions below the sample threshold
 
 ### Eval types (layered)
 
@@ -1219,6 +1325,11 @@ interface PlatformAdapter {
 | `POST /approvals/:id/decide` | approve \| edit \| reject |
 | `POST /tenants/:id/daily-brief` | Trigger daily strategist |
 | `GET /tenants/:id/calendar` | Schedule view |
+| `POST /tenants/:id/published-items` | **Mark as published** (draft_id, platform, optional URL) — creates MEASURE anchor |
+| `POST /tenants/:id/metrics/import` | Manual / CSV metrics import → `post_metrics` |
+| `GET /tenants/:id/performance` | Metrics + KPI progress + angle scores |
+| `POST /tenants/:id/analyst/run` | Run Analyst arm on demand |
+| `GET /tenants/:id/insights` | Latest `performance_insights` |
 | `PATCH /tenants/:id/platforms/:platform` | Toggle modes + flags |
 | `POST /tenants/:id/platforms/:platform/credentials` | Save credentials |
 | `POST /publish/:approvalId/execute` | Manual execute trigger |
@@ -1234,16 +1345,17 @@ interface PlatformAdapter {
 | **0.5** | Model routing, memory, error taxonomy, risk assessor | Unit tests |
 | **1** | **RESEARCH** pillar: market/SERP + trend + competitor (+ **campaign watch**) | Intel with citations; alerts on campaign signals |
 | **2** | **STRATEGY** pillar: ICP, personas, angles/hooks, plan (+ **counter-angles** from alerts) | Strategy eval ≥ 90% |
-| **3** | **CREATION** pillar: posts/campaign drafts + visuals + optional images | On-brand eval; counter-campaign drafts link to alert |
-| **4** | **OPS** daily strategist (email + social priorities) | Brief eval pass |
+| **3** | **CREATION** pillar: posts/campaign drafts + visuals + optional images + **UTM tagging + `published_items` anchor** | On-brand eval; counter-campaign drafts link to alert; mark-as-published works |
+| **3.5** | **MEASURE** pillar: `post_metrics` + manual/CSV import, deterministic stats module, Analyst arm + weekly job, angle scoring, feedback wiring | Analyst eval: planted winner found + cited; no insight below sample threshold |
+| **4** | **OPS** daily strategist (email + social priorities, consumes `performance_insights`) | Brief eval pass |
 | **5** | **OPS** scheduler (email + social calendar) | Reminders + checkpoints |
 | **6** | **OPS** engagement (comments + DMs) | HIGH risk gate for both |
 | **7** | **OPS** browser publisher via **Playwright** (human-like social UI) | Optional armed publish; checkpoint resume; MCP QA |
-| **8** | **OPS** API adapters (social + email send, toggled off) | Credential wizard |
-| **9** | Dashboard UI + observability (4-pillar navigation) | frontend-visual-qa |
+| **8** | **OPS** API adapters (social + email send, toggled off) + **email metrics webhooks → `post_metrics`** | Credential wizard |
+| **9** | Dashboard UI + observability (5-pillar navigation incl. Performance page) | frontend-visual-qa |
 | **10** | Eval CI + deploy hardening | Full suite ≥ 90% |
 
-Phases 0–6 + eval/observability foundations = **shippable MVP**. 7–8 = execution arms ready to activate.
+Phases 0–6 (incl. 3.5 MEASURE) + eval/observability foundations = **shippable MVP**. 7–8 = execution arms ready to activate.
 
 ---
 
@@ -1272,6 +1384,10 @@ Phases 0–6 + eval/observability foundations = **shippable MVP**. 7–8 = execu
 | Retry cap | 2 per transient error |
 | Eval deploy gate | ≥ 90% pass rate on golden fixtures |
 | Context compaction | After 20 turns in short-term buffer |
+| Analyst cadence | Weekly per tenant + on-demand after metrics import |
+| Min sample for insights | 5 published items per angle/format; below → `provisional`, excluded from prompts |
+| Metrics ingestion | Manual/CSV in v1; email webhooks Phase 8; own-page Graph API post-v1 |
+| UTM tagging | Always on: `utm_campaign=campaign_id`, `utm_content=draft_id` |
 
 ---
 
