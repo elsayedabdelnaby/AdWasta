@@ -38,7 +38,7 @@ Competitors       Angles / Hooks     Visuals + images   Social
 | Mode | Default | Description |
 |------|---------|-------------|
 | `copy_pack` | On | Ready-to-paste; best organic reach |
-| `browser` | Off | Playwright in native UI (armed per post) |
+| `browser` | Off | **Playwright** posts in native web UI like a human (organic reach; no API) |
 | `api` | Off | Toggle + credentials; no rewrite to activate |
 | `image_gen` | Off | Nano Banana / Gemini images for posts (Jordan writes prompt) |
 
@@ -51,6 +51,7 @@ Competitors       Angles / Hooks     Visuals + images   Social
 
 ## Principles
 
+- **Organic first** — copy pack or Playwright UI publish; API optional and off by default
 - **Harness is the product** — traces, evals, permissions, checkpoints
 - **Human keeps judgment** — approve before publish/reply/send
 - **ship-loop** — gate every implementation phase

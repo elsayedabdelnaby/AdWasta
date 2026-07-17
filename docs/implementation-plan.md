@@ -6,7 +6,7 @@
 
 **Architecture (locked):** Supervisor Brain routes campaigns. **No chatty multi-agent.** Crews hand off typed `ArmResult` to DB. RESEARCH runs parallel; STRATEGY sequential; CREATION ReAct; OPS deterministic + human gates. Nine arms, four crews, lazy tools, model routing, evals, traces.
 
-**Tech stack:** Node 22, TypeScript, Fastify, PostgreSQL, Drizzle, BullMQ, Redis, Playwright, OpenRouter (routed tiers), Vite + React dashboard.
+**Tech stack:** Node 22, TypeScript, Fastify, PostgreSQL, Drizzle, BullMQ, Redis, **Playwright** (in-app publish + MCP for QA), OpenRouter (routed tiers), Vite + React dashboard.
 
 **Design reference:** `docs/design.md` v3 — Supervised Crew, four pillars, harness, evals.
 
@@ -21,7 +21,8 @@
 | STRATEGY | Sequential: ICP → personas → angles → plan |
 | CREATION | ReAct inside Content arm; visual briefs; optional Nano Banana images |
 | OPS | Deterministic workflow; human approval before publish/reply/send |
-| Publish default | Copy pack; browser/API toggled per tenant |
+| Publish default | Copy pack; **Playwright browser** / API toggled per tenant (organic prefer browser over API) |
+| Browser runtime | **Playwright in-app** (Phase 7); **Playwright MCP** for Cursor QA/demos only |
 | UI personas | Alex (Research), Sam (Strategy), Jordan (Creation), Ops |
 
 ## Marketing cycle — execution map
@@ -46,7 +47,7 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 | **4** | **OPS** | Daily strategist (email + social) | ship-loop |
 | **5** | **OPS** | Scheduler (email + social calendar) | ship-loop |
 | **6** | **OPS** | Comments + DM reply drafts | ship-loop |
-| **7** | **OPS** | Browser publisher (social) | ship-loop |
+| **7** | **OPS** | Browser publisher via **Playwright** (human-like UI) | ship-loop + Playwright MCP QA |
 | **8** | **OPS** | API adapters (social + email, toggled) | ship-loop |
 | **9** | (UI) | 4-pillar dashboard + traces | frontend-visual-qa |
 | **10** | (hardening) | Eval CI | ship-loop |
@@ -63,7 +64,8 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 - API adapters fully scaffolded in v1 (interface, credential schema, health check, stub) — activation is config only
 - Credentials encrypted at rest; never commit secrets
 - Integrate repo `skills/` via ship-loop completion gate per phase
-- Organic reach priority: no API organic publish unless tenant explicitly enables
+- Organic reach priority: prefer **copy pack** or **Playwright browser publish**; no API organic publish unless tenant explicitly enables
+- Browser publish = **in-app Playwright** (screenshot → act, checkpointed); **Playwright MCP** only for build/QA/demos — not the product runtime
 - Model proposes actions; harness permits them (permission layer separate from LLM)
 - HIGH-risk actions (`post_public`, `reply_comment`, `reply_message`, `publish`, `send_email`) always require human approval
 - Lazy tool loading: only arm-relevant tools in each LLM call
@@ -126,7 +128,13 @@ marketing-agent/
 │   │   │   ├── types.ts
 │   │   │   ├── nano-banana.ts
 │   │   │   └── stub.ts
-│   │   ├── browser/
+│   │   ├── browser/              # Playwright computer-use (Phase 7)
+│   │   │   ├── base.ts           # screenshot → act loop + checkpoints
+│   │   │   ├── playwright-pool.ts
+│   │   │   ├── session-store.ts  # per-tenant encrypted storage state
+│   │   │   ├── humanize.ts       # delays / typing cadence
+│   │   │   ├── facebook.ts
+│   │   │   └── twitter.ts
 │   │   └── api/
 │   ├── credentials/
 │   │   ├── vault.ts
@@ -674,33 +682,67 @@ marketing-agent/
 
 ---
 
-## Phase 7 — OPS: browser publisher (social)
+## Phase 7 — OPS: Playwright browser publisher (human-like social)
 
-**Goal:** Optional armed publish via Playwright; checkpointed UI loop.
+**Goal:** Optional armed publish via **in-app Playwright** in the real website UI (organic reach; no social API). Checkpointed computer-use loop. Use **Playwright MCP** during this phase for selector QA and demos only.
 
-### Task 7.1: Browser adapter base
+**Why Playwright (not API):** Post like a human in Facebook/X/etc. so organic reach is not API-penalized. Aligns with Veeza computer-use: screenshot → reason → act; gate irreversible clicks; checkpoint long flows.
+
+### Task 7.0: Playwright dependency + Docker browsers
 
 **Files:**
-- Create: `src/adapters/browser/base.ts`, `playwright-pool.ts`
+- Update: `package.json`, `Dockerfile`, `docs/browser-session-setup.md`, `.env.example`
 
-- [ ] Screenshot → act loop; checkpoint after each step
-- [ ] Gate: `browser_publish_enabled` + approval + `permissions.canExecute`
-- [ ] Transient retry max 2; resume from `last_step`
+- [ ] Add `playwright` dependency; `npx playwright install` (chromium) in Docker image / CI
+- [ ] Env: `PLAYWRIGHT_HEADLESS=true`, `BROWSER_SESSION_DIR` (or DB-backed encrypted storage state)
+- [ ] Document: Playwright MCP (Cursor) for local flow verification — **never** load production tenant sessions into MCP
+- [ ] Worker container has enough shared memory for Chromium (`shm_size` in compose if needed)
+
+### Task 7.1: Browser adapter base (computer-use loop)
+
+**Files:**
+- Create: `src/adapters/browser/base.ts`, `playwright-pool.ts`, `session-store.ts`, `humanize.ts`
+
+- [ ] Screenshot → reason → act loop; **checkpoint after each UI step** (`last_step`, storage path)
+- [ ] Gate: `browser_publish_enabled` + approval + item `armed` + `permissions.canExecute`
+- [ ] Transient retry max 2; resume from `last_step` (do not restart 40-step flows from step 1)
+- [ ] Human-like delays / typing cadence (`humanize.ts`) — avoid instant paste bursts
+- [ ] Stop before irreversible Post/Share; confirm step logged to `agent_traces`
+- [ ] Per-tenant + platform **isolated** Playwright context (encrypted storage state)
+- [ ] Captcha / unexpected modal → user-fixable interrupt (not silent fail)
 
 ### Task 7.2: Facebook browser publish
 
 **Files:**
 - Create: `src/adapters/browser/facebook.ts`, `docs/browser-session-setup.md`
 
-- [ ] `publishPost` UI flow
-- [ ] Test page only for demo
+- [ ] Session setup wizard notes (human logs in once; agent stores storage state)
+- [ ] `publishPost` UI flow on **test page / staging** first
+- [ ] Validate selectors with **Playwright MCP** in Cursor before locking in code
+- [ ] Copy pack fallback if browser session expired
 
-### Task 7.3: Execute API
+### Task 7.3: X (Twitter) browser publish (scaffold)
+
+**Files:**
+- Create: `src/adapters/browser/twitter.ts`
+
+- [ ] Same interface as Facebook; scaffold + stub health check
+- [ ] Demo path optional if Facebook gate passes first
+
+### Task 7.4: Execute API + scheduler hook
 
 - [ ] `POST /publish/:approvalId/execute?mode=browser`
-- [ ] Full trace + audit on success/failure
+- [ ] Scheduler path: armed + due → enqueue browser publish job (BullMQ)
+- [ ] Full `audit_log` + `system_events` + `agent_traces` on success/failure
+- [ ] Never silent: failures always surface in approval/calendar UI
 
-**Phase 7 gate:** Demo publish to test page; never silent; checkpoint resume works on simulated failure.
+### Task 7.5: Phase gate with Playwright MCP
+
+- [ ] MCP smoke: open test page → walk publish selectors → confirm screenshots match adapter expectations
+- [ ] Product smoke: demo tenant arms a post → worker publishes via in-app Playwright
+- [ ] Simulated mid-flow crash → resume from checkpoint
+
+**Phase 7 gate:** Demo publish to test page via **in-app Playwright**; never silent; checkpoint resume works; MCP used only for QA notes, not as runtime.
 
 ---
 
@@ -863,7 +905,7 @@ Phase 0 → 0.5
 | **4** | **OPS** | Daily strategist (email + social) | Brief eval pass |
 | **5** | **OPS** | Scheduler (email + social) | No silent execute |
 | **6** | **OPS** | Comments + DM reply drafts | HIGH risk gate for both |
-| **7** | **OPS** | Browser publisher (social) | Checkpointed publish |
+| **7** | **OPS** | Playwright browser publisher (human-like) | Checkpointed UI publish + MCP QA |
 | **8** | **OPS** | API adapters (social + email) | Toggle + cred wizard |
 | **9** | UI | 4-pillar dashboard + traces | frontend-visual-qa |
 | **10** | hardening | Eval CI | Full suite ≥ 90% |
@@ -975,7 +1017,7 @@ Use this as the source-of-truth checklist. Every row must stay true before calli
 | Private message / DM reply drafts | ✅ | Phase 6 (`type=message`) |
 | Separate toggles comments vs DMs | ✅ | `api_reply_enabled` / `api_dm_reply_enabled` |
 | No silent auto-reply | ✅ | HIGH risk + approval |
-| Browser publish (optional) | ✅ | Phase 7 |
+| Browser publish (optional, **Playwright** human-like UI) | ✅ | Phase 7 (+ Playwright MCP for QA) |
 | API publish / reply / email (scaffold, off by default) | ✅ | Phase 8 |
 | Human gate on irreversible actions | ✅ | Global constraints |
 
@@ -1002,4 +1044,4 @@ Use this as the source-of-truth checklist. Every row must stay true before calli
 
 ## Next step
 
-Begin **Phase 0** implementation in `marketing-agent/`.
+Begin **Phase 0** implementation in `AdWasta/`.

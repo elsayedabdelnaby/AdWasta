@@ -231,7 +231,7 @@ Customers activate only what they need. Turning a feature **on** opens a credent
 | `daily_brief_enabled` | On | Ops daily brief cron |
 | `scheduler_enabled` | On | Calendar + reminders |
 | `engagement_enabled` | On | Comment + DM reply draft generation |
-| `browser_publish_enabled` | Off | Armed Playwright publish |
+| `browser_publish_enabled` | Off | Armed **Playwright** publish in native web UI (organic) |
 | `api_publish_enabled` | Off | Social API publish + credential form |
 | `api_reply_enabled` | Off | API replies on **public comments** |
 | `api_dm_reply_enabled` | Off | API replies on **private messages / DMs** |
@@ -739,8 +739,10 @@ Three execution adapters. **All built in v1.** Default activation:
 | Adapter | ID | Default | Use when |
 |---------|-----|---------|----------|
 | Copy pack | `copy_pack` | **On** | User pastes into native app; best reach control |
-| Browser | `browser` | Off | User arms post; Playwright posts in real UI |
+| Browser | `browser` | Off | User arms post; **Playwright** posts in the real site UI like a human (organic reach; no social API) |
 | API | `api` | Off | User enables flag + saves credentials; future/automation |
+
+**Organic reach priority:** Prefer copy pack or Playwright browser publish over social APIs. APIs often reduce organic distribution; browser publish mimics a real user in Facebook/X/etc.
 
 ### Feature flag matrix (`platform_connections`)
 
@@ -756,6 +758,7 @@ require_approval_for_reply: true           # comments AND DMs — always true in
 ```
 
 When user toggles `api_*_enabled` → UI prompts for credentials → validate → encrypt → store in `credentials` → run adapter health check.
+When user toggles `browser_publish_enabled` → UI walks through browser session setup (login once, encrypted storage) → health check opens site in isolated context.
 
 ### Permission model (separate from model reasoning)
 
@@ -787,6 +790,56 @@ propose (Content/Engagement arm)
 4. **Execute** → adapter runs; result logged; failures retry with checkpoint  
 
 No silent publish. No silent auto-reply on comments **or DMs**.
+
+---
+
+## 10.0 Playwright — human-like website publish (locked)
+
+**Why:** Post in the **native web UI** so reach stays organic. No Graph/API post for default organic publishing.
+
+### Two Playwright surfaces (do not conflate)
+
+| Surface | Where it runs | Purpose |
+|---------|---------------|---------|
+| **Playwright in AdWasta** (production) | Worker / OPS Publisher arm (`src/adapters/browser/`) | Armed, scheduled, checkpointed publish for tenants |
+| **Playwright MCP** (dev / QA) | Cursor IDE MCP | Agents and humans verify flows, debug selectors, demo publish without shipping product code |
+
+Product execution **always** goes through the in-app adapter. Playwright MCP is a **build-time / QA tool**, not the multi-tenant runtime.
+
+### Production adapter behavior (Phase 7)
+
+```
+Approved + armed item
+  → gate: browser_publish_enabled + permissions.canExecute
+  → load tenant-isolated Playwright context (cookies / storage state)
+  → computer-use loop: screenshot → reason → act (click/type)
+  → checkpoint after each UI step (resume from last_step on failure)
+  → human-like delays / typing (avoid instant API-shaped bursts)
+  → on success: audit_log + agent_traces + system_events
+  → on failure: never silent; surface in UI; max 2 transient retries
+```
+
+### Session & isolation
+
+- One browser **storage state** (or profile dir) **per tenant + platform** — never shared across tenants
+- Sessions encrypted at rest (same vault pattern as API credentials)
+- Worker runs headed or headless per env; Docker image includes Playwright browsers
+- Login is human-assisted once (QR / password in UI); agent does not scrape passwords from chat
+- Cookie refresh / re-auth interrupts → user-fixable error class (§15)
+
+### Human-like interaction rules
+
+- Prefer visible UI controls over hidden API shortcuts
+- Randomize short delays within bounds; type text in chunks (not one paste dump unless the site expects it)
+- Stop and checkpoint before irreversible clicks (Post / Share / Send)
+- Cap steps (~40); hard stop + checkpoint if UI diverges (captcha, unexpected modal)
+
+### Playwright MCP usage (dev only)
+
+- Validate Facebook/X publish selectors against live or staging pages
+- Smoke-test approval → execute path during Phase 7/9 gates
+- Support `frontend-visual-qa` and ship-loop demos
+- **Never** point MCP at production tenant sessions or store customer cookies in Cursor config
 
 ---
 
@@ -964,7 +1017,7 @@ Runs once per tenant per day (cron or manual trigger):
 | Type | Behavior |
 |------|----------|
 | **Soft schedule** | Calendar slot + reminder + copy pack ready at T-minus |
-| **Armed browser** | At scheduled time, if `browser_publish_enabled` + item armed → Publisher uses Playwright |
+| **Armed browser** | At scheduled time, if `browser_publish_enabled` + item armed → Publisher runs **in-app Playwright** (human-like UI publish, checkpointed) |
 | **Armed API** | At scheduled time, if `api_publish_enabled` + creds valid + item armed → Publisher uses API adapter |
 
 Scheduler stores checkpoint: `pending | reminded | executing | published | failed | skipped`. Failed at step N resumes from N.
@@ -994,8 +1047,9 @@ Publisher arm never swallows errors — they become `audit_log` entries with `tr
 - Credentials encrypted; never logged
 - Audit log for all approvals and executions
 - Rate limiting on intel tools and LLM calls per tenant
-- Browser sessions isolated per tenant
+- Browser sessions isolated per tenant (**Playwright storage state** per tenant + platform; no cross-tenant cookies)
 - User must own connected accounts; no credential sharing across tenants
+- Playwright MCP is for local QA only — never wire production tenant sessions into IDE MCP
 
 ### Prompt injection defense (external content)
 
@@ -1103,16 +1157,17 @@ Brain loads procedural skills **only when relevant** (dynamic discovery, not upf
 | DB | PostgreSQL + Drizzle ORM | Multi-tenant relational data |
 | Queue | BullMQ + Redis | Scheduled jobs, armed execution, background arm runs |
 | LLM | OpenRouter (routed per task) | Configurable tiers per arm |
-| Browser | Playwright | Computer-use publish arm |
+| Browser | **Playwright** (in-app) | Computer-use publish arm — organic UI posts; MCP for QA only |
 | UI | Vite + React | Approval inbox, calendar, settings, traces |
-| Secrets | env + encrypted DB column | Credential vault |
+| Secrets | env + encrypted DB column | Credential vault + browser session storage |
 | Observability | OpenTelemetry-compatible traces (or custom `agent_traces` v1) | Cost and debug visibility |
+| Dev / QA | Playwright MCP (Cursor) | Selector/debug demos; not multi-tenant runtime |
 
 ---
 
 ## 21. Platform adapters (v1 scope)
 
-| Channel / platform | Copy pack | Browser arm | API arm (ready, off) |
+| Channel / platform | Copy pack | Browser arm (Playwright) | API arm (ready, off) |
 |--------------------|-----------|-------------|----------------------|
 | **Email** | ✓ (subject + body) | N/A | ✓ SMTP / SendGrid / Resend scaffold |
 | Facebook | ✓ | ✓ scaffold | ✓ Graph API scaffold |
@@ -1183,7 +1238,7 @@ interface PlatformAdapter {
 | **4** | **OPS** daily strategist (email + social priorities) | Brief eval pass |
 | **5** | **OPS** scheduler (email + social calendar) | Reminders + checkpoints |
 | **6** | **OPS** engagement (comments + DMs) | HIGH risk gate for both |
-| **7** | **OPS** browser publisher (social) | Optional armed publish |
+| **7** | **OPS** browser publisher via **Playwright** (human-like social UI) | Optional armed publish; checkpoint resume; MCP QA |
 | **8** | **OPS** API adapters (social + email send, toggled off) | Credential wizard |
 | **9** | Dashboard UI + observability (4-pillar navigation) | frontend-visual-qa |
 | **10** | Eval CI + deploy hardening | Full suite ≥ 90% |
@@ -1226,6 +1281,7 @@ Phases 0–6 + eval/observability foundations = **shippable MVP**. 7–8 = execu
 - [Agentic AI Engineer Roadmap](https://youmind.com/landing/x-viral-articles/agentic-ai-engineer-roadmap-guide) — async, HITL, evals, tracing, production deploy
 - [Min(Input) → Max(Output)](https://ahmedhesham.dev/blog/min-input-max-output/) — reachable vs active context
 - Veeza computer-use talk — gate irreversible actions, checkpoint long flows
+- Playwright — production browser adapter + MCP for flow QA
 - Repo `skills/` — ship-loop completion gate
 
 ---
