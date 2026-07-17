@@ -1,6 +1,6 @@
 # AdWasta — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: use `ship-loop` for every phase. Gate each phase: verify → simplify → independent review → structure review → runtime smoke → commit. Run eval suite where noted before phase sign-off.
+> **For agentic workers:** one phase per context — ready-made prompt in `docs/phase-prompt.md`. Gate every phase (design §19): pressure-test the slice against `design.md` + `docs/adr/` → implement test-first (`superpowers:test-driven-development`) → verify with real output (`superpowers:verification-before-completion`, `npm test`, `npm run build`, the phase's own gate line) → `/code-review` the diff → stop and report. Run the eval suite where noted before sign-off.
 
 **Goal:** Ship a **Supervised Crew** AdWasta: thin Brain supervisor + specialist crews (Research, Strategy, Creation, Ops, Measure), five-pillar cycle with a performance feedback loop, human-gated publish, production harness.
 
@@ -47,18 +47,18 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 
 | Phase | Pillar | Delivers | Skills at gate |
 |-------|--------|----------|----------------|
-| 0, 0.5 | (foundation) | Harness, DB, jobs, traces | ship-loop |
-| **1** | **RESEARCH** | Market/SERP + trends + competitors + **campaign watch/alerts** | grill-with-docs, ship-loop |
-| **2** | **STRATEGY** | ICP, personas, angles/hooks, plan + **counter-campaign angles** | grill-with-docs, ship-loop |
-| **3** | **CREATION** | Posts/campaign drafts + visuals + optional Nano Banana (+ counter posts) + **UTM tagging + published_items anchor** | frontend-visual-qa, ship-loop |
-| **3.5** | **MEASURE** | Metrics schema + import, deterministic stats, Analyst arm + weekly job, angle scoring, feedback wiring | grill-with-docs, ship-loop |
-| **4** | **OPS** | Daily strategist (email + social, consumes `performance_insights`) | ship-loop |
-| **5** | **OPS** | Scheduler (email + social calendar) | ship-loop |
-| **6** | **OPS** | Comments + DM reply drafts | ship-loop |
+| 0, 0.5 | (foundation) | Harness, DB, jobs, traces | completion gate |
+| **1** | **RESEARCH** | Market/SERP + trends + competitors + **campaign watch/alerts** | intel vs profile; completion gate |
+| **2** | **STRATEGY** | ICP, personas, angles/hooks, plan + **counter-campaign angles** | strategy vs profile; completion gate |
+| **3** | **CREATION** | Posts/campaign drafts + visuals + optional Nano Banana (+ counter posts) + **UTM tagging + published_items anchor** | `verify` skill; completion gate |
+| **3.5** | **MEASURE** | Metrics schema + import, deterministic stats, Analyst arm + weekly job, angle scoring, feedback wiring | insights vs metric rows; completion gate |
+| **4** | **OPS** | Daily strategist (email + social, consumes `performance_insights`) | completion gate |
+| **5** | **OPS** | Scheduler (email + social calendar) | completion gate |
+| **6** | **OPS** | Comments + DM reply drafts | completion gate |
 | ~~7~~ | ~~OPS~~ | ~~Browser publisher~~ — **deferred post-v1 (ADR-001)** | — |
-| **8** | **OPS** | API adapters (social + email, toggled) | ship-loop |
-| **9** | (UI) | 5-pillar dashboard + Performance page + traces | frontend-visual-qa |
-| **10** | (hardening) | Eval CI | ship-loop |
+| **8** | **OPS** | API adapters (social + email, toggled) | completion gate |
+| **9** | (UI) | 5-pillar dashboard + Performance page + traces | `verify` skill |
+| **10** | (hardening) | Eval CI | completion gate |
 
 ---
 
@@ -73,7 +73,7 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 - API adapters fully scaffolded in v1 (interface, credential schema, health check, stub) — activation is config only
 - Credentials: envelope encryption (KEK → per-tenant DEK); never commit secrets; rotation runbook in `docs/security.md`
 - Postgres RLS enabled on every tenant table from Phase 0.2 (defense-in-depth with middleware `tenant_id`)
-- Integrate repo `skills/` via ship-loop completion gate per phase
+- Run the completion gate (design §19) at every phase; one phase per context
 - Competitor intel: ToS-safe sources only (SERP, competitor sites/RSS, pasted intel, optional paid provider adapter) — never login-gated social scraping (design §12)
 - Playwright MCP only for build/QA/demos — not the product runtime
 - Model proposes actions; harness permits them (permission layer separate from LLM)
@@ -404,7 +404,7 @@ marketing-agent/
 
 **Goal:** Full research cycle with cited intel. Market/SERP, trends, and competitors run in parallel.
 
-**Skills at gate:** `grill-with-docs` (intel vs tenant profile), `ship-loop`.
+**Gate:** pressure-test intel against the tenant profile; completion gate (design §19).
 
 ### Task 1.1: Tool implementations
 
@@ -502,7 +502,7 @@ marketing-agent/
 
 **Goal:** Strategy outputs feed CREATION. ICP before personas; angles before content.
 
-**Skills at gate:** `grill-with-docs`, `ship-loop`.
+**Gate:** pressure-test strategy against the tenant profile; completion gate (design §19).
 
 ### Task 2.1: Strategy arm — ICP + personas
 
@@ -564,7 +564,7 @@ marketing-agent/
 
 **Goal:** Social + email copy with visual briefs; optional image generation via Nano Banana; human approval before OPS.
 
-**Skills at gate:** `frontend-visual-qa` (draft + image previews), `ship-loop`.
+**Gate:** `verify` skill (draft + image previews); completion gate (design §19).
 
 ### Task 3.1: Content arm — copywriting
 
@@ -670,7 +670,7 @@ marketing-agent/
 - [ ] Copy pack view: ready-to-paste output per approved item + **Mark as published** button
 - [ ] Simple onboarding form (`POST /tenants/:id/onboard`)
 - [ ] Deliberately ugly-but-usable; full dashboard is Phase 9 — the point is validating the approve-loop UX with a real tenant **now**
-- [ ] `frontend-visual-qa` light pass (desktop only)
+- [ ] `verify` skill light pass (desktop only)
 
 **Phase 3 gate:** recommend → (optional images) → approve → copy pack for social + email; visual briefs always; images only when toggle on; creation eval pass; **links carry UTM params; mark-as-published creates anchor row; a real user can run the whole approve loop in the thin UI**.
 
@@ -680,7 +680,7 @@ marketing-agent/
 
 **Goal:** Close the loop: ingest performance metrics, compute stats deterministically, and have the Analyst arm turn them into insights that feed STRATEGY, CREATION, and the daily brief. Design reference: §12.2.
 
-**Skills at gate:** `grill-with-docs` (insights vs actual metric rows), `ship-loop`.
+**Gate:** pressure-test insights against actual metric rows; completion gate (design §19).
 
 ### Task 3.5.1: Metrics schema + import
 
@@ -857,7 +857,7 @@ marketing-agent/
 
 **Revisit only when all three hold:** (1) measured tenant-level reach-penalty data, (2) a ToS-compliant execution path, (3) explicit tenant consent flow. Until then `browser_publish_enabled` stays a reserved flag and no `src/adapters/browser/` code is written.
 
-**Playwright MCP remains a dev/QA tool** for `frontend-visual-qa` on the dashboard (Phase 9) — never for product runtime.
+**Playwright MCP remains a dev/QA tool** for the `verify` skill on the dashboard (Phase 9) — never for product runtime.
 
 ---
 
@@ -947,10 +947,10 @@ marketing-agent/
 
 ### Task 9.3: Visual QA
 
-- [ ] Run `frontend-visual-qa` skill on Approvals + Calendar (desktop + mobile)
+- [ ] Run the `verify` skill on Approvals + Calendar (desktop + mobile)
 - [ ] Fix layout issues before phase sign-off
 
-**Phase 9 gate:** Full UI flow demo; traces visible; frontend-visual-qa clean.
+**Phase 9 gate:** Full UI flow demo; traces visible; `verify` skill clean.
 
 ---
 
@@ -986,15 +986,22 @@ marketing-agent/
 
 ---
 
-## Skills wiring
+## Tooling wiring
 
-Symlink or copy into `marketing-agent/.claude/skills/`:
+> **Corrected 2026-07-17.** This section previously told you to symlink `../skills/ship-loop`,
+> `../skills/structural-code-review`, and `../skills/frontend-visual-qa`, and noted that
+> `CLAUDE.md` references `@AGENTS.md`. **None of those files existed** — there is no
+> `../skills/` directory. Each is mapped to a real tool below; the gate is unchanged.
 
-- `../skills/ship-loop`
-- `../skills/structural-code-review`
-- `../skills/frontend-visual-qa`
+Nothing to symlink. The completion gate (design §19) uses tools already available:
 
-`CLAUDE.md` already references `@AGENTS.md` and ship-loop.
+| Was | Now |
+|-----|-----|
+| `ship-loop` | `docs/phase-prompt.md` + `superpowers:test-driven-development` + `superpowers:verification-before-completion` |
+| `structural-code-review` | `/code-review` on the diff |
+| `frontend-visual-qa` | `verify` skill (Playwright MCP — QA only, ADR-001) |
+| `grill-with-docs` | Inline: pressure-test the slice against `design.md` + `docs/adr/` |
+| `@AGENTS.md` rules | Enforced by the gate: evidence before assertions, no self-certify |
 
 ---
 
@@ -1046,7 +1053,7 @@ Deferred: Phase 7 browser publisher (ADR-001)
 | **6** | **OPS** | Comments + DM reply drafts | HIGH risk gate for both |
 | ~~7~~ | ~~OPS~~ | ~~Browser publisher~~ — deferred post-v1 (ADR-001) | — |
 | **8** | **OPS** | API adapters (social + email) + email compliance + metrics webhooks | Toggle + cred wizard + suppression gate |
-| **9** | UI | 5-pillar dashboard + Performance page + traces | frontend-visual-qa |
+| **9** | UI | 5-pillar dashboard + Performance page + traces | `verify` skill |
 | **10** | hardening | Eval CI | Full suite ≥ 90% |
 
 ---
@@ -1061,7 +1068,7 @@ Deferred: Phase 7 browser publisher (ADR-001)
 - [x] Visual briefs + email copy in Phase 3
 - [x] Optional Nano Banana image adapter (`image_gen_enabled`, default off)
 - [x] Email + social OPS in Phases 4–8
-- [x] Skills per pillar (grill-with-docs, frontend-visual-qa, ship-loop)
+- [x] Gate per pillar (spec pressure-test, `verify` skill, completion gate — design §19)
 - [x] Phase 0.5 harness foundations
 - [x] `agent_traces`, `eval_runs`, async jobs
 - [x] Model routing (fast / balanced / deep)
@@ -1087,7 +1094,7 @@ Deferred: Phase 7 browser publisher (ADR-001)
 - [x] Email compliance: suppression, unsubscribe, consent, SPF/DKIM/DMARC
 - [x] Unit economics: cost envelope + harness-enforced budget caps
 - [x] Thin approval UI in R1 (Task 3.9); B2B/B2C audience models; versioned prompts
-- [x] ship-loop gate per phase
+- [x] Completion gate per phase (design §19)
 
 ---
 
@@ -1105,7 +1112,7 @@ Use this as the source-of-truth checklist. Every row must stay true before calli
 | Personas Alex / Sam / Jordan / Ops | ✅ | `crews/roster.ts`, Phase 9 UI |
 | Typed `ArmResult` handoffs to DB | ✅ | Global constraints + Phase 0.5 |
 | Min(Input)→Max(Output) / lazy tools | ✅ | Tool registry Phase 0.9 |
-| ship-loop + skills gates | ✅ | Every phase gate + Skills wiring |
+| Completion gate (design §19) | ✅ | Every phase gate + Tooling wiring |
 | Harness: traces, evals, memory, risk, sanitize | ✅ | Phases 0, 0.5, 10 |
 | OpenRouter model routing (fast/balanced/deep) | ✅ | Phase 0.5.1 |
 | Docker for local + publish | ✅ | `docker-compose.yml` (already scaffolded) |

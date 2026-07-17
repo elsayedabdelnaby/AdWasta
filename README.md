@@ -56,7 +56,7 @@ Competitors       Angles / Hooks     Visuals + images   Social       Insights
 - **Harness is the product** — traces, evals, permissions, checkpoints
 - **Human keeps judgment** — approve before publish/reply/send
 - **Closed loop** — metrics feed insights; insights feed the next strategy and content round
-- **ship-loop** — gate every implementation phase
+- **Completion gate** (design §19) — gate every implementation phase; prompt in `docs/phase-prompt.md`
 - **Min(Input)→Max(Output)** — minimum context per specialist
 
 ## Docker (local & publish)

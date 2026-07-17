@@ -1,22 +1,31 @@
 # AdWasta — Claude Code instructions
 
-@AGENTS.md
-
 ## Project
 
 Multi-tenant AdWasta: Supervised Crew — ten arms, five pillars, one Brain.
 
 Read `docs/design.md` before architectural changes.
 Follow `docs/implementation-plan.md` phase order.
+`docs/adr/` holds binding decisions — they override anything older in the specs.
 
-## Workflow
+## Workflow — the completion gate
 
-For any non-trivial implementation phase, use the `ship-loop` skill from `../skills/ship-loop/SKILL.md`:
+One phase per context. `docs/phase-prompt.md` is the ready-made prompt.
 
-1. Plan and slice the phase
-2. Grill the plan against `docs/design.md` and tenant domain rules
-3. Implement
-4. Run completion gate: verify → simplify → independent review → structure review → runtime smoke → commit
+1. **Plan and slice** the phase from `docs/implementation-plan.md`
+2. **Pressure-test** the slice against `docs/design.md`, `docs/adr/`, and the
+   non-negotiables below. Contradiction or ambiguity ⇒ stop and ask, never guess
+3. **Implement test-first** — `superpowers:test-driven-development`. Every plan
+   checkbox that says "test:" is required, not optional
+4. **Completion gate — all four, in order:**
+   - `superpowers:verification-before-completion` — run the commands, paste real
+     output; never call a failure a pass
+   - `npm test` green + `npm run build` clean
+   - the phase's own gate line from the plan, exercised for real
+   - `/code-review` on the diff — fix real findings, report skipped ones
+5. **Stop and report.** Do not start the next phase. Ask before pushing.
+
+UI phases additionally use the `verify` skill (Playwright MCP — QA only, per ADR-001).
 
 ## Non-negotiables
 

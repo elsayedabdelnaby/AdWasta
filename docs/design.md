@@ -4,7 +4,7 @@
 **Date:** 2026-07-17 (v3: 2026-07-16)  
 **Codename:** Supervised Crew — One Brain, Specialist Team
 
-**Informed by:** [Agent Harness anatomy](https://blog.dailydoseofds.com/p/the-anatomy-of-an-agent-harness), [Agentic AI Engineer roadmap](https://youmind.com/landing/x-viral-articles/agentic-ai-engineer-roadmap-guide), [Min(Input)→Max(Output)](https://ahmedhesham.dev/blog/min-input-max-output/), Veeza computer-use production lessons, repo `skills/` ship-loop.
+**Informed by:** [Agent Harness anatomy](https://blog.dailydoseofds.com/p/the-anatomy-of-an-agent-harness), [Agentic AI Engineer roadmap](https://youmind.com/landing/x-viral-articles/agentic-ai-engineer-roadmap-guide), [Min(Input)→Max(Output)](https://ahmedhesham.dev/blog/min-input-max-output/), Veeza computer-use production lessons.
 
 **Architecture decision (locked):** Multi-agent **supervised crew** with structured handoffs — **not** a single mega-prompt, **not** chatty agents debating in one thread.
 
@@ -29,7 +29,7 @@ Build a **multi-tenant AdWasta** that runs the full marketing cycle for any busi
 
 ## 1.1 Marketing cycle — five pillars
 
-The product follows one end-to-end marketing cycle. Every arm and phase maps to a pillar. The Brain orchestrates the cycle; **ship-loop** gates each pillar before the next tranche of work ships. MEASURE closes the loop: performance feeds the next STRATEGY / CREATION round.
+The product follows one end-to-end marketing cycle. Every arm and phase maps to a pillar. The Brain orchestrates the cycle; the **completion gate** (§19) gates each pillar before the next tranche of work ships. MEASURE closes the loop: performance feeds the next STRATEGY / CREATION round.
 
 ```
 THE AdWasta
@@ -79,11 +79,11 @@ Re-run **RESEARCH** on a schedule (24h staleness) or on demand. **CREATION** con
 
 | Pillar | Skills applied |
 |--------|----------------|
-| RESEARCH | `grill-with-docs` (validate intel against tenant profile), ship-loop gate |
-| STRATEGY | `grill-with-docs`, ship-loop gate |
-| CREATION | `frontend-visual-qa` (draft + image previews), ship-loop gate |
-| OPS | `frontend-visual-qa` (inbox + calendar), ship-loop gate, human approval gate |
-| MEASURE | `grill-with-docs` (insights vs actual metric rows), ship-loop gate |
+| RESEARCH | Pressure-test intel against tenant profile; completion gate (§19) |
+| STRATEGY | Pressure-test strategy against tenant profile; completion gate (§19) |
+| CREATION | `verify` skill (draft + image previews); completion gate (§19) |
+| OPS | `verify` skill (inbox + calendar); completion gate (§19); human approval gate |
+| MEASURE | Pressure-test insights against actual metric rows; completion gate (§19) |
 
 ---
 
@@ -194,7 +194,7 @@ These are final — do not revisit without strong evidence.
 | Loop style | Plan-and-execute between crews; ReAct inside an arm | 3.6× faster than pure ReAct chains (LLMCompiler); flexible within arm |
 | Context | Min sufficient per arm; lazy tools | [Context engineering](https://blog.dailydoseofds.com/p/the-anatomy-of-an-agent-harness) — quality over volume |
 | Model routing | Fast / balanced / deep per task | Cost + quality balance |
-| Verification | Rules + eval suite + ship-loop; judge ≠ producer | Deterministic beats self-grading |
+| Verification | Rules + eval suite + completion gate (§19); judge ≠ producer | Deterministic beats self-grading |
 | Publish | Copy pack default; official API toggled per tenant; **browser publish deferred post-v1 (ADR-001)** | Zero account risk; ToS-safe; the "API posts get penalized reach" premise is **refuted** by controlled tests (ADR-001) — not merely unproven |
 | Image gen | Nano Banana optional; Jordan writes prompt | Pixels ≠ copy; toggle off by default |
 | Permissions | Harness enforces; model only proposes | Anthropic separation pattern |
@@ -319,7 +319,7 @@ The harness is everything around the model: orchestration, tools, memory, contex
 | **7. State management** | DB persistence + checkpoints on schedules and browser publish flows |
 | **8. Error handling** | Four error classes with defined recovery (see §14) |
 | **9. Guardrails** | Risk assessor + approval inbox + tool permission layer separate from model |
-| **10. Verification loops** | Eval suite + ship-loop gate; deterministic checks over self-grading |
+| **10. Verification loops** | Eval suite + completion gate (§19); deterministic checks over self-grading |
 | **11. Subagent orchestration** | Ten specialist arms in five crews; 1–2k token `ArmResult` handoffs |
 
 **Harness thickness:** Keep the Brain thin. Arms own domain reasoning. Verification and permissions live in the harness, not in prompt hope.
@@ -938,7 +938,7 @@ No silent publish. No silent auto-reply on comments **or DMs**.
 
 ### Playwright MCP (unchanged)
 
-Playwright MCP in Cursor remains a **dev/QA tool only** — `frontend-visual-qa`, dashboard smoke tests, demo flows. It never touches tenant sessions or production data.
+Playwright MCP remains a **dev/QA tool only** — the `verify` skill, dashboard smoke tests, demo flows. It never touches tenant sessions or production data.
 
 It is not merely *scoped* to QA — it is **unfit** for production publishing on two independent counts (ADR-001):
 
@@ -1319,7 +1319,7 @@ Maintain `evals/fixtures/` per arm with demo tenant scenarios:
 The ≥90% targets only mean something if fixtures are good. Process, per arm:
 
 1. **Before the arm's phase starts:** hand-author **≥10 golden fixtures** — input scenario + expected-outcome assertions. Cover both `audience_model=b2c` (Aurora Coffee) and one `b2b` fixture tenant
-2. **Review:** each fixture passes `grill-with-docs` against the tenant profile (does the "expected" answer actually make marketing sense?)
+2. **Review:** each fixture is pressure-tested against the tenant profile (does the "expected" answer actually make marketing sense?)
 3. **Ratchet, don't pretend:** deterministic rules are blocking from day one (100% pass). LLM-as-judge scores are **advisory** for an arm's first phase; they become blocking at ≥90% only once the arm has ≥25 fixtures including real-usage examples harvested from R1
 4. **Harvest:** every human edit/rejection in the approval inbox is a candidate fixture (input + what the human changed) — the fixture set grows from real usage, not imagination
 
@@ -1369,19 +1369,27 @@ Long arm runs must not block HTTP:
 
 ---
 
-## 19. Skills integration (`../skills/`)
+## 19. Build workflow — the completion gate
 
-| Skill | When |
-|-------|------|
-| `ship-loop` | Every implementation phase ends at completion gate |
-| `structural-code-review` | After each phase before merge |
-| `frontend-visual-qa` | Dashboard / approval UI verification |
-| `grill-with-docs` | Pressure-test marketing plan against tenant profile |
-| `AGENTS.md` rules | No self-certify; quality over speed |
+> **Corrected 2026-07-17.** This section previously specified four skills — `ship-loop`,
+> `structural-code-review`, `frontend-visual-qa`, `grill-with-docs` — plus an `AGENTS.md`
+> ruleset and a `../skills/` directory. **None of them existed anywhere.** The *intent* of
+> each was sound, so each is mapped below to a real tool. The gate is otherwise unchanged.
 
-Project-local skills: `marketing-agent/.claude/skills/` symlinks or copies from repo `skills/`.
+| Step | Real tool | When |
+|------|-----------|------|
+| Plan and slice | `docs/phase-prompt.md` | Start of every phase |
+| Pressure-test the slice against the spec *(was `grill-with-docs`)* | Inline: read `design.md` + `docs/adr/`; contradiction ⇒ stop and ask | Before implementing |
+| Test-first implementation | `superpowers:test-driven-development` | Every task |
+| Verify — real commands, real output *(was `ship-loop` gate)* | `superpowers:verification-before-completion` + `npm test` + `npm run build` + the phase's own gate line | End of every phase |
+| Independent review *(was `structural-code-review`)* | `/code-review` on the diff | End of every phase, before commit |
+| Dashboard / approval UI verification *(was `frontend-visual-qa`)* | `verify` skill (Playwright MCP — **QA only**, ADR-001) | Phases 3.9, 9 |
+| No self-certify; quality over speed *(was `AGENTS.md` rules)* | Enforced by the gate above: evidence before assertions | Always |
 
-Brain loads procedural skills **only when relevant** (dynamic discovery, not upfront dump).
+**One phase per context.** The plan is ~1,200 lines; loading it plus prior phases' code
+crowds out the work. Gates exist so you can clear between them.
+
+Tools load **only when relevant** — dynamic discovery, not an upfront dump.
 
 ---
 
@@ -1501,7 +1509,7 @@ interface PlatformAdapter {
 | **6** | **OPS** engagement (comments + DMs) | HIGH risk gate for both |
 | ~~7~~ | ~~Browser publisher~~ — **deferred post-v1 (ADR-001)** | — |
 | **8** | **OPS** API adapters (social + email send, toggled off) + **email metrics webhooks → `post_metrics`** + **email compliance (suppression, unsubscribe)** | Credential wizard + compliance checks |
-| **9** | Dashboard UI + observability (5-pillar navigation incl. Performance page) | frontend-visual-qa |
+| **9** | Dashboard UI + observability (5-pillar navigation incl. Performance page) | `verify` skill |
 | **10** | Eval CI + deploy hardening | Full suite ≥ 90% |
 
 ### Release plan (locked — solves v1 over-scope)
@@ -1557,10 +1565,10 @@ R1 answers the only question that matters first: **does the agent produce market
 - [Min(Input) → Max(Output)](https://ahmedhesham.dev/blog/min-input-max-output/) — reachable vs active context
 - Veeza computer-use talk — gate irreversible actions, checkpoint long flows
 - Playwright MCP — dev/QA flow verification only (in-app publisher deferred, ADR-001)
-- Repo `skills/` — ship-loop completion gate
+- Completion gate — §19
 
 ---
 
 ## 27. Approval
 
-Review this spec. When approved, implementation follows `implementation-plan.md` (v2, aligned with this design) using ship-loop per phase.
+Review this spec. When approved, implementation follows `implementation-plan.md` one phase per context, using the completion gate (§19). Ready-made prompt: `docs/phase-prompt.md`.

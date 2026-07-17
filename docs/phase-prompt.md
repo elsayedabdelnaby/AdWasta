@@ -19,10 +19,6 @@ Implement Phase <N> of AdWasta. One phase only — stop at the gate.
 - docs/adr/0001, 0002, 0003 — binding decisions; they override anything older
 - CLAUDE.md — non-negotiables
 
-Note: CLAUDE.md references `../skills/ship-loop/SKILL.md` and `@AGENTS.md`. Both are
-MISSING from this repo. Ignore those references; this prompt replaces them. Do not
-invent a ship-loop skill and do not stop to look for it.
-
 ## Non-negotiables (violating any = phase fails)
 - Every table has tenant_id AND a Postgres RLS policy on app.tenant_id
 - Every route authenticates; tenant_id comes from the SESSION, never a path param
@@ -70,10 +66,9 @@ Begin by reading the docs and listing the phase's tasks as todos.
 
 ## Notes
 
-**Why not `ship-loop`:** the skill and its directory don't exist in this repo. The prompt
-above inlines an equivalent gate (plan → TDD → implement → verify → review → stop) using
-skills that do exist. If you later add `../skills/ship-loop/SKILL.md`, replace the
-"How to work" section with an invocation of it.
+**The gate:** plan → pressure-test → TDD → verify → review → stop. Defined in design §19,
+summarised in CLAUDE.md, and inlined above so this prompt stands alone. All three agree —
+if you change one, change the others.
 
 **Why one phase per context:** each phase is large, and the plan is ~1,200 lines. Loading
 the whole thing plus prior phases' code crowds out the actual work. Phase gates exist so
