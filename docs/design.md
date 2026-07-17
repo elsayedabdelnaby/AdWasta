@@ -195,7 +195,7 @@ These are final — do not revisit without strong evidence.
 | Context | Min sufficient per arm; lazy tools | [Context engineering](https://blog.dailydoseofds.com/p/the-anatomy-of-an-agent-harness) — quality over volume |
 | Model routing | Fast / balanced / deep per task | Cost + quality balance |
 | Verification | Rules + eval suite + ship-loop; judge ≠ producer | Deterministic beats self-grading |
-| Publish | Copy pack default; official API toggled per tenant; **browser publish deferred post-v1 (ADR-001)** | Zero account risk; ToS-safe; the "API posts get penalized reach" premise is unverified (Meta denies it) — validate with data before building UI automation |
+| Publish | Copy pack default; official API toggled per tenant; **browser publish deferred post-v1 (ADR-001)** | Zero account risk; ToS-safe; the "API posts get penalized reach" premise is **refuted** by controlled tests (ADR-001) — not merely unproven |
 | Image gen | Nano Banana optional; Jordan writes prompt | Pixels ≠ copy; toggle off by default |
 | Permissions | Harness enforces; model only proposes | Anthropic separation pattern |
 | Multi-tenancy | Day one | Product requirement |
@@ -206,6 +206,9 @@ These are final — do not revisit without strong evidence.
 | Browser publish | **Deferred post-v1** (ADR-001, §10.0) | ToS violation + customer account risk + unverified reach premise |
 | Competitor data | ToS-safe tiers: SERP/web/RSS + pasted intel; paid provider adapter optional (§12) | Social scraping is blocked + illegal-ish; price the provider before R2 |
 | Tenant isolation | Middleware `tenant_id` **+ Postgres RLS from day one** | Defense-in-depth; cheap now, painful to retrofit |
+| **Authentication** | **WorkOS AuthKit (ADR-002); `tenant_id` resolves from session, never a path param** | RLS is authorization, not identity — without auth it's a lock with no door |
+| Workflow engine | Mastra (Apache-2.0) for **workflows + HITL suspend/resume + durable state only**; arms stay plain TS + OpenRouter (ADR-002) | `suspend()`/`resume()` *is* the approval inbox — the hardest part of the harness, already built |
+| Observability | Langfuse (MIT core) for tracing/evals; **§6.1 caps stay harness-enforced** | Langfuse has no per-tenant spend cap — enforcement can't live there |
 | Credential crypto | Envelope encryption (KEK → per-tenant DEK), KMS-ready | Rotation without re-encrypting every row |
 | Release scoping | R1 validation slice → R2 operations → R3 automation (§23) | Prove value before building the rest |
 | Eval gates | Deterministic rules blocking day one; judge scores ratchet in (§17) | Honest gates; fixtures harvested from real approvals |
@@ -455,14 +458,18 @@ Configuration via `MODEL_ROUTING` env or per-tenant override in settings. Every 
 
 | Run | Frequency (defaults) | Est. cost/run | Est. cost/mo |
 |-----|----------------------|---------------|--------------|
-| RESEARCH crew (3 arms, balanced+deep) | 24h staleness ≈ 30/mo | ~$0.20 | ~$6.00 |
+| **Trend/competitor watch — Tier 0** (§12.3) | **hourly ≈ 720/mo** | **~$0 (no LLM)** | **~$0** |
+| RESEARCH crew (3 arms, balanced+deep) — Tier 1 | on detected change; 24h max staleness ≈ 30–40/mo | ~$0.20 | ~$6–8 |
 | Competitor watch (light mode) | every 12h ≈ 60/mo | ~$0.05 | ~$3.00 |
 | STRATEGY crew (deep) | ~2/mo | ~$0.40 | ~$0.80 |
 | CREATION (5 drafts/platform/day cap) | ~30/mo runs | ~$0.15 | ~$4.50 |
+| **Image generation** (`image_gen_enabled`, default **off**) | 1 variant/draft × 30 | **~$0.134** (Pro @1K) | **~$4.00 (off by default; ~$12 at 3 variants)** |
 | Daily strategist | 30/mo | ~$0.10 | ~$3.00 |
 | Analyst (weekly) | 4–5/mo | ~$0.05 | ~$0.25 |
-| SERP API (Tavily/SerpAPI) | metered | — | ~$5–15 |
-| **Modeled total / tenant-month** | | | **~$25–35** |
+| Search API (Brave + Tavily — **not SerpAPI**, see §12.3) | metered | — | ~$5–15 |
+| **Modeled total / tenant-month** | | | **~$25–35** (+~$4–12 if image gen on) |
+
+**Why Tier 0 is free and hourly:** running the *LLM* trend arm hourly would be ~720 runs/tenant-month (24× today), blowing the RESEARCH line and tripping `MONTHLY_BUDGET_USD` mid-month. Tier 0 does cheap change-detection with no LLM; Tier 1 fires only on a real diff. See §12.3.
 
 ### Hard caps (harness-enforced, not advisory)
 
@@ -488,12 +495,27 @@ Configuration via `MODEL_ROUTING` env or per-tenant override in settings. Every 
 
 ### How isolation works
 
+- **Authentication first** — WorkOS AuthKit; every route resolves the caller's identity from the session (§7.2). Without this, the two layers below are one layer with extra steps
 - Middleware injects `tenant_id` on every query; no cross-tenant reads
 - **Postgres Row-Level Security enabled from day one** (Phase 0.2): every tenant table gets an RLS policy on `app.tenant_id`; middleware/worker sets the session variable per request/job. Cheap now, painful to retrofit
 - Credentials, events, drafts, and engagement items are all tenant-scoped
 - Demo tenant and real customers share the same schema and instance
 
 Every record is scoped by `tenant_id`. No cross-tenant reads.
+
+### 7.2 Authentication & identity (ADR-002)
+
+**RLS is authorization, not authentication — a lock with no door.** An RLS policy faithfully enforces "this session may only touch rows for `app.tenant_id`." It says nothing about *which tenant the caller actually is*. If `app.tenant_id` were set from the `:id` path parameter, RLS would dutifully isolate whatever tenant an attacker names. Identity must be established before isolation means anything.
+
+| Concern | Rule |
+|---------|------|
+| Provider | **WorkOS AuthKit** — free to 1M MAU; Organizations map onto `tenants`; SSO/SCIM available as enterprise tenants arrive |
+| Identity → tenant | WorkOS Organization ↔ `tenants.id`. Membership is the authorization record |
+| **The load-bearing rule** | Every route resolves `tenant_id` **from the session**; `app.tenant_id` is set from that resolved value — **never from a path parameter**. `GET /tenants/:id/...` must verify the session's membership in `:id`, not trust it |
+| Workers | BullMQ jobs carry a resolved `tenant_id` from enqueue time; the worker sets `app.tenant_id` from the job record, never from job input |
+| Gate | Phase 0: an unauthenticated request to any tenant route returns **401** |
+
+**Why this is urgent even with no platform credentials in v1** (copy_pack-only per ADR-001 means no social tokens are stored): every tenant's strategy, competitor intel, personas, and drafts are cross-tenant readable without it — and unauthenticated endpoints trigger LLM runs, so anyone could burn the OpenRouter budget. The §6.1 caps *meter* spend; they don't *authenticate* the spender.
 
 | Entity | Purpose |
 |--------|---------|
@@ -717,13 +739,31 @@ Market, Trend, and Competitor arms run **concurrently** during RESEARCH (`Promis
 ### Feature flag
 
 ```yaml
-image_gen_enabled: false          # tenant-level; default off
-image_gen_provider: nano_banana   # nano_banana | gemini | stub
-image_gen_max_variants: 3         # per draft
-image_gen_default_size: "1080x1080"
+image_gen_enabled: false            # tenant-level; default off
+image_gen_provider: gemini          # gemini | stub
+image_gen_model: gemini-3-pro-image # see model table below
+image_gen_max_variants: 1           # per draft; ≥2 needs explicit tenant opt-in (cost)
+image_gen_default_size: "1024x1024" # native tier — 1K | 2K | 4K
 ```
 
-When `image_gen_enabled` flips on → credential wizard for Google AI / Gemini API key (or provider key) → `validateCredentials` → encrypt → health check.
+> **Corrected 2026-07-17 (ADR-003).** Two earlier errors: (1) **`nano_banana` and `gemini` were listed as separate providers — they are the same thing.** "Nano Banana" is a marketing nickname for Google's Gemini image models: same API, same SDK, same auth; only the model string changes. (2) **`1080x1080` is not a native output size** — native tiers are 1K (1024×1024), 2K, 4K. Resample post-generation if a channel spec needs exactly 1080.
+
+| Marketing name | Model ID | Cost @1K |
+|---|---|---|
+| Nano Banana (Aug 2025) | `gemini-2.5-flash-image` | $0.039 flat |
+| Nano Banana 2 | `gemini-3.1-flash-image` | $0.067 |
+| Nano Banana 2 Lite | `gemini-3.1-flash-lite-image` | ~$0.034 |
+| **Nano Banana Pro** (default) | `gemini-3-pro-image` | **$0.134** |
+
+When `image_gen_enabled` flips on → credential wizard for Google AI / Gemini API key → `validateCredentials` → encrypt → health check.
+
+**SDK:** `@google/genai`. **`@google/generative-ai` is deprecated** (Nov 30, 2025). *Unverified:* current docs are titled "Interactions API" and samples use `ai.interactions.create({model, input})` rather than `generateContent` — **confirm the method shape against live docs before locking `ImageAdapter`.**
+
+**Cost reality — why `image_gen_enabled: false` is doing economic work, not just caution:** at Nano Banana Pro 1K, 3 variants = **$0.40/draft**. At §25's cap of 5 drafts/platform/day that exceeds the entire ~$25-35 modeled tenant-month (§6.1). Variants are **N sequential calls** — there is no native multi-candidate parameter. Default `max_variants` to 1; gate ≥2 behind explicit tenant opt-in.
+
+**SynthID watermarking is applied to every generated image** with no documented API opt-out. Commercial-use implications for API callers are **unverified** — legal read before selling generated assets to tenants.
+
+**Content policy:** expect friction generating identifiable people, public figures, and third-party trademarked logos. Whether passing a *tenant's own logo* as a reference image is exempt is **unconfirmed** — validate early, since the brand-consistency rule below depends on it.
 
 ### Flow
 
@@ -741,26 +781,32 @@ Jordan: write draft + visual_brief
 
 ```typescript
 interface ImageAdapter {
-  provider: 'nano_banana' | 'gemini' | 'stub';
+  provider: 'gemini' | 'stub';   // "Nano Banana" is a Gemini model, not a provider (ADR-003)
   validateCredentials(creds: unknown): Promise<ValidationResult>;
   healthCheck(tenantId: string): Promise<HealthResult>;
   generate(input: {
     prompt: string;
-    aspectRatio: '1:1' | '9:16' | '16:9' | '4:5';
-    brandRefUrls?: string[];
-    variants: number; // 1–3
+    model: string;              // gemini-3-pro-image | gemini-3.1-flash-image | ...
+    aspectRatio: '1:1' | '9:16' | '16:9' | '4:5';  // all supported; API also has 3:2, 4:3, 5:4, 21:9
+    resolution?: '1K' | '2K' | '4K';               // default 1K (1024x1024)
+    brandRefUrls?: string[];    // object/style refs — see limits below
+    variants: number;           // 1-3 → N sequential calls; no native multi-candidate param
   }): Promise<{ assets: GeneratedAsset[]; costUsd: number }>;
 }
 ```
 
-**Scaffold in v1:** full interface + stub that returns placeholder URLs; real Nano Banana / Gemini client when credentials present. Same pattern as social API adapters.
+**Scaffold in v1:** full interface + stub that returns placeholder URLs; real Gemini client when credentials present. Same pattern as social API adapters.
+
+**Vertex AI vs Developer API:** `@google/genai` supports both. Vertex gives per-project IAM/service-account isolation and cleaner billing separation for multi-tenant; Developer API keys are simpler. *Unverified this pass* — decide before locking the isolation model.
 
 ### Brand consistency rules
 
 - Tenant may upload logo / style reference images (stored under tenant assets)
 - Every generate call includes brand refs when available
+- **Reference-image limits are real and model-dependent** — this is the strongest reason to stay on Gemini: Nano Banana 2 accepts **10 object + 4 character + 3 style** refs; Nano Banana Pro **6 object + 5 character** (no dedicated style channel). Pick Nano Banana 2 if style-ref count matters more than raw quality
 - Style anchor from `tenant_profiles.voice` / visual guidelines
-- Cap: `image_gen_max_variants` (default 3); cost logged to `agent_traces` + `system_events` (`image.generated`)
+- Cap: `image_gen_max_variants` (default **1**); cost logged to `agent_traces` + `system_events` (`image.generated`)
+- **Text rendering:** Gemini is strong but Ideogram/GPT Image are still cited ahead on typography accuracy. Validate against real creative templates before treating text-in-image as solved
 
 ### What Nano Banana must not do
 
@@ -812,7 +858,7 @@ Two execution adapters in v1; browser publish is **deferred post-v1** (ADR-001, 
 | API | `api` | Off | User enables flag + saves credentials; official platform APIs only |
 | Browser | `browser` | **Deferred post-v1** | Reserved flag; see ADR-001 |
 
-**Publish principle (revised):** Copy pack is the default because it carries zero account risk and works on every platform. When tenants want automation, use **official APIs**. The earlier claim that API publishing penalizes organic reach is unverified (Meta publicly denies a reach penalty for API posts) — reach differences come from content quality and format, not the publish channel.
+**Publish principle (revised):** Copy pack is the default because it carries zero account risk and works on every platform. When tenants want automation, use **official APIs** — with no reach cost. The earlier claim that API publishing penalizes organic reach is **refuted**, not merely unproven: four controlled tests found API-published posts get equal or *higher* reach (ADR-001). Reach differences come from content quality, format, links, and timing — not the publish channel.
 
 ### Feature flag matrix (`platform_connections`)
 
@@ -866,15 +912,18 @@ No silent publish. No silent auto-reply on comments **or DMs**.
 
 **Decision (2026-07-17):** The in-app Playwright publisher originally planned for Phase 7 is **deferred indefinitely**. `browser_publish_enabled` stays as a reserved flag; no v1 implementation.
 
+**Full evidence:** [`docs/adr/0001-browser-publishing-deferred.md`](adr/0001-browser-publishing-deferred.md) — primary sources for every claim below, plus the ToS/litigation record.
+
 ### Why (supersedes the earlier "organic reach" rationale)
 
 | Concern | Detail |
 |---------|--------|
-| **ToS violation** | Automating posts through Facebook/X web UIs violates both platforms' Terms of Service |
+| **Customer account risk** *(strongest)* | Bot detection is aggressive; the accounts at risk belong to **tenants**, not us — a ban destroys their business asset and our reputation. Platforms don't need to sue; they ban, and that decision has no appeal |
+| **ToS violation** | LinkedIn is explicit — User Agreement §8.2 bans automated methods to "create, comment on, like, share, or re-share posts," **on your own account**. Meta's terms cover automation "regardless of whether... logged-in." Note the nuance: *Van Buren* (SCOTUS 2021) means own-account automation is **not** a CFAA crime — but contract exposure is real (hiQ v. LinkedIn ended in a **$500K judgment against hiQ**). Don't overstate this as "illegal"; the account-risk row above is the load-bearing one |
 | **Customer account risk** | Bot detection is aggressive; the accounts at risk belong to **tenants**, not us — a ban destroys their business asset and our reputation |
 | **Indefensible intent** | Human-like delays/typing cadence is deliberate detection evasion — indefensible if challenged |
 | **Breach blast radius** | Storing tenants' session cookies creates a worst-case full-account-takeover scenario |
-| **Weak premise** | The claim that API posts are penalized on organic reach is unverified; Meta publicly denies it. Reach differences come from content quality, not publish channel |
+| **Refuted premise** | The claim that API posts are penalized on organic reach is **refuted**, not just unproven — four controlled tests show API-published posts get **equal or higher** reach (Agorapulse +22.6%; Hootsuite 10,122 vs 7,189; Social Status +10.3%; CoSchedule "no significant difference"). Facebook did down-rank API posts ~2011 and explicitly fixed it; the belief outlived the mechanism by ~15 years. Reach differences come from content quality, format, links, and timing — not publish channel. Evidence + caveats: **ADR-001** |
 
 ### What replaces it
 
@@ -890,6 +939,13 @@ No silent publish. No silent auto-reply on comments **or DMs**.
 ### Playwright MCP (unchanged)
 
 Playwright MCP in Cursor remains a **dev/QA tool only** — `frontend-visual-qa`, dashboard smoke tests, demo flows. It never touches tenant sessions or production data.
+
+It is not merely *scoped* to QA — it is **unfit** for production publishing on two independent counts (ADR-001):
+
+1. **Not built for backend automation.** Microsoft's README states "Playwright MCP is **not** a security boundary" and steers agents away from MCP; the maintainer rejected a backend-runtime-engine request outright ("This does not allow with our vision"). It also burns ~15k tokens of tool definitions before acting.
+2. **Zero anti-detection.** It is stock Playwright — `navigator.webdriver`, the `Runtime.enable` CDP leak, and automation flags are all present. Using it to appear human would achieve the exact opposite.
+
+If ADR-001's revisit conditions are ever met, the correct shape is a **deterministic worker driven by BullMQ** — no MCP, no LLM per step. Login → compose → post is a fixed script; an LLM deciding each click adds cost, latency, and nondeterminism to a flow that needs none. **LinkedIn is excluded permanently regardless.**
 
 ---
 
@@ -949,7 +1005,7 @@ Daily brief includes: comments needing replies **and** unread DM drafts in the a
 
 | Tier | Source | Tool | Cost / notes |
 |------|--------|------|--------------|
-| 1 | SERP + web search (Tavily / SerpAPI) | `search_serp`, `search_web` | Metered API, budgeted in §6.1; covers competitor sites, news, launches |
+| 1 | SERP + web search (**Brave / Tavily — not SerpAPI**, §12.3) | `search_serp`, `search_web` | Metered API, budgeted in §6.1; covers competitor sites, news, launches |
 | 1 | Competitor websites, blogs, newsletters, RSS | `fetch_web_page`, `fetch_feed` | Free; robots.txt respected; sanitized (§16) |
 | 2 | User-pasted intel (screenshots/text of competitor posts) | `paste_intel` (UI) | Free; v1 answer for social-post-level signals |
 | 3 | **Paid data provider adapter** (Apify / Bright Data / official APIs) | `IntelProviderAdapter` (optional, per-tenant credential + monthly cost cap) | ~$50–500+/mo depending on volume — priced into tenant plan before enabling; **decision + pricing required before R2**, not assumed |
@@ -970,6 +1026,50 @@ Competitor arm outputs structured analysis:
 Trend arm filters for **business relevance** — not viral noise unrelated to tenant profile.
 
 **Citation rule:** Intel snapshots without `citations[]` fail eval gate and are not shown to Content arm.
+
+---
+
+## 12.3 Intel cadence — hourly watch, event-driven analysis (ADR-003)
+
+**Decision:** trends are **checked hourly** and **analyzed on change**. The LLM Trend arm does *not* run hourly.
+
+### Why not hourly analysis
+
+| Reason | Detail |
+|---|---|
+| **Budget** | 720 LLM runs/tenant-month vs ~30 today (24×). Breaks §6.1's RESEARCH envelope and trips `MONTHLY_BUDGET_USD` mid-month — the caps would fire as designed and the product would stop working |
+| **Signal** | Google *Trending Now* refreshes ~10 min and *Daily Trends* hourly — but that measures **viral breakout volatility**, not "did anything change for a bakery or an HVAC company." SMB-relevant shifts move **daily-to-weekly**. Hourly analysis reproduces the same trend ~20×/day — directly contradicting this section's own "business relevance, not viral noise" rule |
+
+### The tier split
+
+| Tier | Cadence | Cost | What runs |
+|---|---|---|---|
+| **Tier 0 — watch** | **Hourly** | ~free, **no LLM** | Conditional-GET RSS/Google Alerts (`If-None-Match` / `If-Modified-Since` → `304`, empty body) + one cheap Brave call. Fingerprint, compare to last stored |
+| **Gate** | — | — | Materially unchanged → **stop**. No LLM, no snapshot row, no alert |
+| **Tier 1 — analyze** | Event-triggered (~1–4×/day/tenant steady state) | full arm | On real diff: multi-call search + LLM Trend arm with citations → `intel_snapshots` type=trend |
+| **Fallback** | 24h max | full arm | Force Tier 1 at least every 24h even with no detected change — preserves the existing staleness SLA |
+
+**This mirrors a pattern already in the design.** §12.1 defines `detect_campaign_change` for competitors and Task 1.4b runs competitor watch in "light mode," alerting only on signal. The Trend arm takes the same shape — the codebase gains one consistent watch-then-analyze idiom instead of two.
+
+### Dedup
+
+Normalize (title + top snippet) → fingerprint with **SimHash (64-bit)** or a small embedding. Near-duplicate → bump `last_seen`, no new row, no re-alert, when **Hamming ≤ 3/64** or **cosine ≥ 0.90**. Below threshold → new record + Tier 1. *(Standard IR/dedup ranges — SimHash ≤3–6/64, cosine 0.85–0.92 — tune against fixtures at the Phase 1 gate.)*
+
+### Source selection (ToS-safe + inside the ~$5–15 intel budget, at 720 polls/tenant-month)
+
+| Source | Verdict |
+|---|---|
+| **RSS / Google Alerts RSS** | **Primary Tier-0 layer** — free, unlimited with polite conditional-GET |
+| **Brave Search API** | **Viable** — $5/1k requests, $5 free credit/mo, 50 qps → ~$0–8/tenant-mo. Cheapest paid option |
+| **Tavily** | **Viable, sparingly** — 1k free credits/mo, $0.008/credit PAYG, basic search = 1 credit. Keep for Tier-1 quality calls |
+| **Exa** | Probably viable — official page claims 20k req/mo free but conflicts with third-party trackers. **Verify in-dashboard first** |
+| **SerpAPI** | **Disqualified** — cheapest plan is $25/mo, exceeding the entire intel budget on its own. *Still named in `.env.example` and Task 1.1 — remove* |
+| **Google Trends official API** | **Not usable** — alpha, allowlist-gated since July 2025, not GA, no public pricing |
+| **pytrends / unofficial Trends** | **Disqualified by §12's ToS-safe rule.** Also archived April 2025 |
+| **Reddit API** | **Disqualified** — free tier explicitly non-commercial; commercial has a **$12,000/yr minimum**. *(Inferred from third-party trackers — verify before any adoption)* |
+| **YouTube Data API v3** | Free 10k units/day, but quota is **product-wide, not per-tenant** — ~4 tenants at hourly cadence exhaust it. Not a scaling Tier-0 source |
+
+**Push beats poll where available:** WebSub/PubSubHubbub gives true push for RSS/Atom when the publisher supports a hub — adopt opportunistically, not as primary plumbing (adoption is spotty).
 
 ---
 
@@ -1289,15 +1389,19 @@ Brain loads procedural skills **only when relevant** (dynamic discovery, not upf
 
 | Layer | Choice | Why |
 |-------|--------|-----|
-| Runtime | Node.js 22 + TypeScript | Async-native; good Playwright ecosystem |
+| Runtime | Node.js 22 + TypeScript | Async-native |
 | API | Fastify | Lightweight, schema validation, async handlers |
-| DB | PostgreSQL + Drizzle ORM | Multi-tenant relational data |
-| Queue | BullMQ + Redis | Scheduled jobs, armed execution, background arm runs |
+| **Auth** | **WorkOS AuthKit** (ADR-002) | Orgs ↔ tenants; free to 1M MAU; SSO/SCIM when enterprise arrives |
+| DB | PostgreSQL + Drizzle ORM | Multi-tenant relational data + RLS |
+| Queue | BullMQ + Redis | Scheduled jobs, Tier-0 watch cron, background arm runs |
+| **Workflows / HITL** | **Mastra** (Apache-2.0) — workflows + `suspend()`/`resume()` + durable state only | The approval inbox, already built. Arms stay plain TS. **Audit `ee/` gating before committing** |
 | LLM | OpenRouter (routed per task) | Configurable tiers per arm |
+| Image gen | **Gemini** (`@google/genai`) — "Nano Banana" is a nickname for these models, not a separate provider | §8.2; off by default |
+| Search / intel | **Brave** (Tier 0) + **Tavily** (Tier 1); **not SerpAPI** — $25/mo floor exceeds the intel budget | §12.3 |
 | Browser | **Playwright MCP (dev/QA only)** | Dashboard visual QA + demos; in-app publisher deferred (ADR-001) |
 | UI | Vite + React | Approval inbox, calendar, settings, traces |
-| Secrets | env + encrypted DB column | Credential vault + browser session storage |
-| Observability | OpenTelemetry-compatible traces (or custom `agent_traces` v1) | Cost and debug visibility |
+| Secrets | env + encrypted DB column (envelope: KEK → per-tenant DEK) | Credential vault; **no browser session storage** (ADR-001) |
+| Observability | **Langfuse** (MIT core, Cloud) + thin `agent_traces` rollup | Tracing/evals bought, not built. **§6.1 caps stay in the harness — Langfuse has no per-tenant spend cap** |
 | Dev / QA | Playwright MCP (Cursor) | Selector/debug demos; not multi-tenant runtime |
 
 ---
@@ -1386,9 +1490,9 @@ interface PlatformAdapter {
 
 | Phase | Delivers | Gate |
 |-------|----------|------|
-| **0** | Scaffold, DB, tenant CRUD, feature flags, credential vault, trace shell, lazy tool registry, async job API | Tests + migrate |
-| **0.5** | Model routing, memory, error taxonomy, risk assessor | Unit tests |
-| **1** | **RESEARCH** pillar: market/SERP + trend + competitor (+ **campaign watch**) | Intel with citations; alerts on campaign signals |
+| **0** | **Auth (WorkOS, Task 0.3a)**, scaffold, DB + RLS, tenant CRUD, feature flags, credential vault, trace shell, lazy tool registry, async job API, **per-tenant rate limit, health/readiness, backup/PITR** | Tests + migrate; **401 unauth / 403 non-member** |
+| **0.5** | Model routing, memory, error taxonomy, risk assessor, **campaign pipeline on Mastra workflows + HITL suspend/resume** | Unit tests; **survives restart mid-suspend** |
+| **1** | **RESEARCH** pillar: market/SERP + trend + competitor (+ **campaign watch**) + **hourly Tier-0 watch / Tier-1 analysis split (ADR-003)** | Intel with citations; alerts on campaign signals; **24 unchanged polls ⇒ zero LLM calls** |
 | **2** | **STRATEGY** pillar: ICP, personas, angles/hooks, plan (+ **counter-angles** from alerts) | Strategy eval ≥ 90% |
 | **3** | **CREATION** pillar: posts/campaign drafts + visuals + optional images + **UTM tagging + `published_items` anchor** | On-brand eval; counter-campaign drafts link to alert; mark-as-published works |
 | **3.5** | **MEASURE** pillar: `post_metrics` + manual/CSV import, deterministic stats module, Analyst arm + weekly job, angle scoring, feedback wiring | Analyst eval: planted winner found + cited; no insight below sample threshold |
@@ -1432,8 +1536,8 @@ R1 answers the only question that matters first: **does the agent produce market
 | UI vs CLI-first | Web dashboard primary; CLI for agent dev |
 | Text (OpenRouter) | Fast / balanced / deep tiers per §6 |
 | Image gen | Off; Nano Banana / Gemini via `ImageAdapter` when `image_gen_enabled` |
-| Image variants | Max 3 per draft |
-| Intel refresh | 24h staleness triggers re-run |
+| Image variants | Default **1** per draft; max 3 (≥2 needs tenant opt-in — ~$0.13/image, §6.1) |
+| Intel refresh | **Hourly Tier-0 watch (no LLM); Tier-1 analysis on detected change; 24h max staleness** (§12.3) |
 | Max drafts per day | 5 per platform (configurable) |
 | Max arm steps | 10 per ReAct loop; hard stop |
 | Retry cap | 2 per transient error |

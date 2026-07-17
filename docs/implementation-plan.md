@@ -65,6 +65,7 @@ Every implementation phase maps to one pillar. Ship-loop + pillar skills gate ea
 ## Global Constraints
 
 - Multi-tenant from day one: **one shared Postgres**; every table has `tenant_id` (not DB-per-customer)
+- **Every route authenticates (WorkOS AuthKit); `tenant_id` resolves from the session, never from a path param — `app.tenant_id` is set from that resolved value (design §7.2, ADR-002).** RLS without authentication is a lock with no door
 - No publish or reply (comment or DM) without explicit approval in v1
 - `require_approval_for_publish` and `require_approval_for_reply` are always true in v1
 - Separate toggles: `api_reply_enabled` (comments) vs `api_dm_reply_enabled` (DMs)
@@ -235,12 +236,27 @@ marketing-agent/
 - [ ] Strip secrets from payload (never log API keys)
 - [ ] Unit test: emit + query by tenant; audit doubles into events
 
+### Task 0.3a: Auth & tenant identity (ADR-002) — **before any tenant route**
+
+**Files:**
+- Create: `src/auth/workos.ts`, `src/auth/hook.ts`, `src/db/schema/memberships.ts`
+
+**Why first:** Task 0.2 enables RLS on `app.tenant_id`. Nothing yet establishes *which* tenant the caller is — if `app.tenant_id` came from the `:id` path param, RLS would faithfully isolate whatever tenant an attacker names. Identity must land before isolation means anything.
+
+- [ ] WorkOS AuthKit integration; `.env`: `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD`
+- [ ] Map WorkOS Organization ↔ `tenants.id`; persist membership rows
+- [ ] Fastify `preHandler` hook: verify session → resolve `tenantId` from membership → set `request.tenantId`
+- [ ] Set Postgres `app.tenant_id` **from `request.tenantId`**, never from the URL
+- [ ] `:id` routes assert the session is a member of `:id` → else 403
+- [ ] BullMQ jobs carry a resolved `tenantId` from enqueue; workers set `app.tenant_id` from the job record, never from job input
+- [ ] Integration tests: unauthenticated → **401**; authenticated but non-member of `:id` → **403**; cross-tenant read returns zero rows even with RLS deliberately disabled (proves both layers)
+
 ### Task 0.3: Tenant API
 
 **Files:**
 - Create: `src/api/routes/tenants.ts`
 
-- [ ] `POST /tenants`, `GET /tenants/:id`
+- [ ] `POST /tenants`, `GET /tenants/:id` — all behind the Task 0.3a auth hook
 - [ ] `POST /tenants/:id/onboard` with Zod profile validation
 - [ ] Integration test: create tenant + onboard
 
@@ -305,7 +321,7 @@ marketing-agent/
 - [ ] `getToolsForArm(armId)` returns subset per design §9
 - [ ] JSON schema per tool; argument validation before execute
 
-**Phase 0 gate:** `npm test` green; tenant CRUD; encrypted creds; job enqueue/poll; **events + traces written**; tool subsets differ per arm.
+**Phase 0 gate:** `npm test` green; **unauthenticated request to any tenant route returns 401, and a non-member returns 403**; tenant CRUD; encrypted creds; job enqueue/poll; **events + traces written**; tool subsets differ per arm; **per-tenant rate limit trips under load; `/healthz` + `/readyz` report Postgres/Redis/queue depth**.
 
 ---
 
@@ -364,18 +380,23 @@ marketing-agent/
 - [ ] Delimiter: `<untrusted_content>...</untrusted_content>`
 - [ ] Unit test with known injection strings
 
-### Task 0.5.6: Campaign pipeline shell
+### Task 0.5.6: Campaign pipeline shell — on Mastra workflows (ADR-002)
 
 **Files:**
 - Create: `src/brain/supervisor.ts`, `campaign-pipeline.ts`, `src/crews/roster.ts`
 
-- [ ] `runCampaign(tenantId, idea?)` orchestrates: RESEARCH → STRATEGY → CREATION (stops before OPS until approval)
-- [ ] Each step persists `ArmResult`; next crew reads from DB only
-- [ ] `crews/roster.ts` maps arms → persona (Alex, Sam, Jordan) for traces/UI
-- [ ] Supervisor never calls LLM to redo specialist output — route only
-- [ ] Unit test: pipeline order enforced; no skip STRATEGY before RESEARCH
+**Scope of Mastra (selective):** workflows + HITL suspend/resume + durable state **only**. Model routing (0.5.1), the ReAct loop (0.5.2), and the risk assessor (0.5.4) stay hand-rolled. Arms stay plain TS + OpenRouter. This takes the hardest win — a suspend/resume engine we'd otherwise build — with the least lock-in to a framework shipping at high velocity (1,396 npm versions since Oct 2024).
 
-**Phase 0.5 gate:** Model routing works; ReAct cap; risk HIGH blocks; sanitizer works; **campaign pipeline shell runs dry**.
+- [ ] **Audit which Mastra features are `ee/`-gated before writing code** — the EE license forbids production use without a paid agreement. If the approval primitives are EE, fall back to hand-rolled and revisit this task
+- [ ] `runCampaign(tenantId, idea?)` as a Mastra workflow: RESEARCH → STRATEGY → CREATION, **suspending** before OPS
+- [ ] Approval gate = `suspend()` / `run.resume({step, resumeData: {approved}})` with `suspendSchema` / `resumeSchema`; `bail()` on reject — **this is the approval inbox, not a parallel mechanism.** The inbox UI (Task 3.5) reads suspended runs
+- [ ] Mastra Postgres storage adapter — workflow state survives process restart; tenant-scoped
+- [ ] Each step persists `ArmResult`; next crew reads from DB only
+- [ ] `crews/roster.ts` maps arms → persona (Alex, Sam, Jordan, Riley) for traces/UI
+- [ ] Supervisor never calls LLM to redo specialist output — route only
+- [ ] Unit test: pipeline order enforced; no skip STRATEGY before RESEARCH; **suspend → restart process → resume completes** (proves durability)
+
+**Phase 0.5 gate:** Model routing works; ReAct cap; risk HIGH blocks; sanitizer works; **campaign pipeline shell runs dry and survives a restart mid-suspend**.
 
 ---
 
@@ -390,8 +411,9 @@ marketing-agent/
 **Files:**
 - Create: `src/tools/search-serp.ts`, `search-web.ts`, `fetch-web-page.ts`, `fetch-feed.ts`, `intel-provider.ts`, `query-intel-history.ts`
 
-- [ ] `search_serp`: keywords, SERP results, People Also Ask (SerpAPI/Tavily or fixture)
+- [ ] `search_serp`: keywords, SERP results, People Also Ask — **Brave (Tier 0) / Tavily (Tier 1), or fixture. Not SerpAPI**: its $25/mo plan floor exceeds the entire ~$5-15 intel budget (design §12.3)
 - [ ] `search_web`, `fetch_web_page` (competitor sites/blogs, robots.txt-respecting), `fetch_feed` with offline fixtures
+- [ ] `fetch_feed` uses **conditional GET** (`If-None-Match` / `If-Modified-Since`); a `304` short-circuits with no parse and no LLM — this is what makes hourly polling free
 - [ ] `paste_intel` intake: user-pasted competitor post text/screenshot transcriptions → sanitized intel input (v1 path for social-post signals)
 - [ ] `IntelProviderAdapter` interface + stub: optional paid provider (Apify / Bright Data / official APIs) behind per-tenant credential + monthly cost cap — **no social scraping in our code** (design §12)
 - [ ] All external results through `sanitize-external.ts`
@@ -407,14 +429,30 @@ marketing-agent/
 - [ ] Required `citations[]`
 - [ ] `MODEL_BALANCED` tier
 
-### Task 1.3: Trend arm
+### Task 1.3: Trend arm — Tier 1 (analysis, LLM)
 
 **Files:**
 - Create: `src/arms/trends/run.ts`, `src/db/schema/intel-snapshots.ts`
 
 - [ ] Business-relevant trends only (filter generic viral noise)
 - [ ] `intel_snapshots` type=`trend` + citations
-- [ ] Staleness skip < 24h unless `force=true`
+- [ ] **Triggered by the Tier-0 watch on detected change (Task 1.3b), or `force=true`, or 24h max staleness** — never on a fixed hourly clock (design §12.3)
+
+### Task 1.3b: Trend watch — Tier 0 (hourly, no LLM) — **ADR-003**
+
+**Files:**
+- Create: `src/arms/trends/watch.ts`, `src/intel/fingerprint.ts`, `src/db/schema/intel-watermarks.ts`
+
+**Why this exists:** running the LLM Trend arm hourly is ~720 runs/tenant-month (24× today) — it breaks §6.1's RESEARCH envelope, trips `MONTHLY_BUDGET_USD` mid-month, and produces ~20 near-identical snapshots/day, since SMB-relevant trends move daily-to-weekly, not hourly. Poll cadence and analysis cadence must be decoupled.
+
+- [ ] BullMQ repeatable job, **hourly**, per tenant — **must not call an LLM** (assert this in test; it is the whole point)
+- [ ] Conditional-GET RSS/Google Alerts feeds + one cheap Brave call
+- [ ] Fingerprint candidates (SimHash 64-bit, or embedding); store watermark per source
+- [ ] Gate: **Hamming ≤ 3/64** or **cosine ≥ 0.90** → near-duplicate → bump `last_seen`, **stop** (no row, no alert, no LLM)
+- [ ] Below threshold → enqueue Tier-1 Trend arm (Task 1.3)
+- [ ] 24h fallback: force Tier 1 even with zero detected change
+- [ ] Mirror `detect_campaign_change` (§12.1) — one watch-then-analyze idiom across trends and competitors, not two
+- [ ] Test: 24 consecutive unchanged polls → **zero** LLM calls, zero new snapshot rows; one changed poll → exactly one Tier-1 run
 
 ### Task 1.4: Competitor arm
 
@@ -550,19 +588,26 @@ marketing-agent/
 - [ ] Email drafts: optional hero image brief
 - [ ] Always produced (even when image gen is off — copy pack includes prompt for designer)
 
-### Task 3.3: Image adapter (Nano Banana) — scaffold + toggle
+### Task 3.3: Image adapter (Gemini / "Nano Banana") — scaffold + toggle
 
 **Files:**
-- Create: `src/adapters/image/types.ts`, `nano-banana.ts`, `stub.ts`
+- Create: `src/adapters/image/types.ts`, `gemini.ts`, `stub.ts`
 - Create: `src/db/schema/generated-assets.ts`, `src/credentials/schemas/image-gen.ts`
 
-- [ ] `ImageAdapter` interface: `validateCredentials`, `healthCheck`, `generate`
+**Corrected per ADR-003:** `nano_banana` and `gemini` are **not** two providers — "Nano Banana" is a marketing nickname for Gemini image models (same API, same SDK; only the model string differs). One `gemini` provider; model as config. Hence `gemini.ts`, not `nano-banana.ts`.
+
+- [ ] **Confirm the SDK call shape against live docs before writing the interface** — current package is `@google/genai` (`@google/generative-ai` deprecated Nov 30 2025); docs are titled "Interactions API" and samples use `ai.interactions.create({model, input})` rather than `generateContent`. *Unverified — check first*
+- [ ] `ImageAdapter` interface: `validateCredentials`, `healthCheck`, `generate({prompt, model, aspectRatio, resolution, brandRefUrls, variants})`
 - [ ] Stub adapter returns placeholder assets when no creds
-- [ ] `nano_banana` / Gemini client when `image_gen_enabled` + API key present
+- [ ] Gemini client when `image_gen_enabled` + API key present; default model `gemini-3-pro-image`
+- [ ] **Default resolution 1024×1024** — `1080x1080` is not a native tier (native: 1K/2K/4K); resample if a channel needs exactly 1080
+- [ ] **Variants = N sequential calls** — there is no native multi-candidate parameter. Loop, and bill linearly
 - [ ] Persist `generated_assets` (draft_id, url/path, model, prompt, variant_index, cost_usd)
-- [ ] Cap variants via `image_gen_max_variants` (default 3)
+- [ ] Cap variants via `image_gen_max_variants` (**default 1**); ≥2 requires explicit tenant opt-in — at Pro/1K, 3 variants = **$0.40/draft**, which at 5 drafts/day exceeds the whole modeled tenant-month (§6.1)
+- [ ] Brand refs: Nano Banana 2 takes 10 object + 4 character + 3 style; Pro takes 6 object + 5 character. **Validate early that a tenant's own logo as reference image isn't policy-blocked** — the brand-consistency rule (§8.2) depends on it
 - [ ] Emit `system_events` action `image.generated`; log cost on `agent_traces`
 - [ ] Tenant toggle: `image_gen_enabled` (default false) + credential wizard
+- [ ] Note: **SynthID watermark is applied to every image, no API opt-out** — legal read before selling generated assets
 
 ### Task 3.4: Wire image gen into Content arm
 
@@ -806,7 +851,7 @@ marketing-agent/
 
 **Status: deferred post-v1 — do not implement.** See design §10.0 (ADR-001).
 
-**Why deferred:** automating Facebook/X web UIs violates platform ToS; bot detection risks **tenants'** accounts; human-like cadence code is deliberate detection evasion; storing tenant session cookies is the worst breach scenario in the system; and the "API posts get penalized organic reach" premise is unverified (Meta denies it).
+**Why deferred:** bot detection risks **tenants'** accounts and a ban has no appeal (the strongest reason); automating web UIs violates platform ToS — LinkedIn's §8.2 explicitly bans it even on your own account; human-like cadence code is deliberate detection evasion; storing tenant session cookies is the worst breach scenario in the system; and the "API posts get penalized organic reach" premise is **refuted** by four controlled tests, not merely unproven (ADR-001). Note also that Playwright MCP — the tool usually reached for here — is stock Playwright with **zero anti-detection**, so it would achieve the opposite of the intent.
 
 **What ships instead:** copy pack (default, zero risk) + official API adapters (Phase 8, opt-in).
 
