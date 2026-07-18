@@ -18,6 +18,10 @@ import { registerTraceRoutes } from './routes/traces.js';
 import { registerEventRoutes } from './routes/events.js';
 import { registerIntelRoutes, type ResearchProviders } from './routes/intel.js';
 import { registerStrategyRoutes } from './routes/strategy.js';
+import { registerContentRoutes, type ContentProviders } from './routes/content.js';
+import { registerApprovalRoutes } from './routes/approvals.js';
+import { StubImageAdapter } from '../adapters/image/stub.js';
+import type { ImageAdapter } from '../adapters/image/types.js';
 import { LlmClient } from '../llm/openrouter.js';
 import { BraveSearchProvider, FixtureSearchProvider } from '../tools/search-web.js';
 import { modelTiersFromConfig } from '../config/model-routing.js';
@@ -39,6 +43,8 @@ export interface BuildAppDeps {
   rateLimit?: { max: number; timeWindow: number | string };
   /** RESEARCH providers (LLM + search + model tiers). Injected in tests. */
   research?: ResearchProviders;
+  /** Image adapter for CREATION. Defaults to the stub (design §8.2). */
+  imageAdapter?: ImageAdapter;
 }
 
 /**
@@ -112,6 +118,13 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
   };
   registerIntelRoutes(app, { db, hooks, providers: research });
   registerStrategyRoutes(app, { db, hooks, providers: research });
+  const contentProviders: ContentProviders = {
+    llm: research.llm,
+    models: research.models,
+    imageAdapter: deps.imageAdapter ?? new StubImageAdapter(),
+  };
+  registerContentRoutes(app, { db, hooks, providers: contentProviders });
+  registerApprovalRoutes(app, { db, hooks });
   if (deps.jobQueue) {
     registerJobRoutes(app, { db, hooks, queue: deps.jobQueue });
   }

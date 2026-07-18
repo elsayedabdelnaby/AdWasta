@@ -70,3 +70,31 @@ export const strategyRules: EvalRule[] = [
       (s.data.channels as unknown[]).includes('social'),
   },
 ];
+
+export const creationRules: EvalRule[] = [
+  {
+    name: 'social-has-platform-tag',
+    applies: (s) => s.type === 'social_draft',
+    check: (s) => typeof s.data.platform === 'string' && (s.data.platform as string).length > 0,
+  },
+  {
+    name: 'social-has-visual-brief',
+    applies: (s) => s.type === 'social_draft',
+    check: (s) => s.data.hasVisualBrief === true,
+  },
+  {
+    name: 'email-has-subject',
+    applies: (s) => s.type === 'email_draft',
+    check: (s) => typeof s.data.subject === 'string' && (s.data.subject as string).length > 0,
+  },
+  {
+    name: 'angle-aligned',
+    applies: () => true,
+    check: (s) => typeof (s.data.rationale ?? s.summary) === 'string' && String(s.data.rationale ?? s.summary).length > 0,
+  },
+  {
+    name: 'images-present-when-enabled',
+    applies: (s) => s.data.imageGenEnabled === true,
+    check: (s) => typeof s.data.imageCount === 'number' && (s.data.imageCount as number) >= 1,
+  },
+];

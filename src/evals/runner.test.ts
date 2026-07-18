@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
 import { evaluate, loadFixtures, PASS_THRESHOLD } from './runner.js';
-import { researchRules, strategyRules, type EvalSnapshot } from './rules.js';
+import { researchRules, strategyRules, creationRules, type EvalSnapshot } from './rules.js';
 
 const goodMarket: EvalSnapshot = { type: 'market', summary: 'ok', data: { keywords: ['cold brew'] }, citations: ['https://a'] };
 const noCitations: EvalSnapshot = { type: 'market', summary: 'ok', data: { keywords: ['x'] }, citations: [] };
@@ -36,6 +36,13 @@ describe('eval runner (design §17)', () => {
     const fixtures = loadFixtures(join('evals', 'fixtures', 'strategy'));
     expect(fixtures.length).toBeGreaterThanOrEqual(8);
     const report = evaluate(fixtures, strategyRules);
+    expect(report.passRate).toBeGreaterThanOrEqual(PASS_THRESHOLD);
+  });
+
+  it('the golden creation fixtures clear the ≥90% deploy gate', () => {
+    const fixtures = loadFixtures(join('evals', 'fixtures', 'creation'));
+    expect(fixtures.length).toBeGreaterThanOrEqual(8);
+    const report = evaluate(fixtures, creationRules);
     expect(report.passRate).toBeGreaterThanOrEqual(PASS_THRESHOLD);
   });
 });

@@ -64,6 +64,20 @@
       "when": 1784338445540,
       "tag": "0008_strategy_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784339210422,
+      "tag": "0009_creation_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1784339211190,
+      "tag": "0010_creation_rls",
+      "breakpoints": true
     }
   ]
 }

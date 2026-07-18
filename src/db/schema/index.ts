@@ -15,3 +15,7 @@ export * from './personas.js';
 export * from './messaging-angles.js';
 export * from './marketing-plans.js';
 export * from './campaigns.js';
+export * from './content-drafts.js';
+export * from './visual-briefs.js';
+export * from './generated-assets.js';
+export * from './approval-queue.js';

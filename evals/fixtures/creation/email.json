@@ -1,0 +1,22 @@
+[
+  {
+    "type": "email_draft",
+    "summary": "Aurora cold-brew-is-back email.",
+    "data": { "subject": "Cold brew is back", "preheader": "your summer favorite returns", "rationale": "aligns to seasonal angle" }
+  },
+  {
+    "type": "email_draft",
+    "summary": "Aurora loyalty perks email.",
+    "data": { "subject": "Your 10th coffee is on us", "preheader": "a thank-you for regulars", "rationale": "aligns to loyalty angle" }
+  },
+  {
+    "type": "email_draft",
+    "summary": "B2B consolidation nurture email.",
+    "data": { "subject": "Replace five tools with one", "preheader": "cut cost and complexity", "rationale": "aligns to consolidation angle" }
+  },
+  {
+    "type": "email_draft",
+    "summary": "B2B security-first onboarding email.",
+    "data": { "subject": "SOC2 from day one", "preheader": "security your team can trust", "rationale": "aligns to security-first angle" }
+  }
+]

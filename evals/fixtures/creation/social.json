@@ -1,0 +1,22 @@
+[
+  {
+    "type": "social_draft",
+    "summary": "Aurora cold brew social post (facebook), on local-sourcing angle.",
+    "data": { "platform": "facebook", "hasVisualBrief": true, "rationale": "aligns to local sourcing angle", "imageGenEnabled": true, "imageCount": 1 }
+  },
+  {
+    "type": "social_draft",
+    "summary": "Aurora seasonal drop (instagram).",
+    "data": { "platform": "instagram", "hasVisualBrief": true, "rationale": "aligns to seasonal-menu angle" }
+  },
+  {
+    "type": "social_draft",
+    "summary": "Aurora loyalty teaser (facebook).",
+    "data": { "platform": "facebook", "hasVisualBrief": true, "rationale": "aligns to loyalty angle" }
+  },
+  {
+    "type": "social_draft",
+    "summary": "B2B consolidation post (linkedin).",
+    "data": { "platform": "linkedin", "hasVisualBrief": true, "rationale": "aligns to consolidate-your-stack angle", "imageGenEnabled": true, "imageCount": 2 }
+  }
+]
