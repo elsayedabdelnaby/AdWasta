@@ -1,6 +1,8 @@
 import type { PlatformAdapter, PublishMode } from './types.js';
 import { makeCopyPackAdapter } from './copy-pack/adapter.js';
 import { makeApiStubAdapter } from './api/stub.js';
+import { makeFacebookAdapter } from './api/facebook.js';
+import { makeTwitterAdapter } from './api/twitter.js';
 
 export const SUPPORTED_PLATFORMS = ['facebook', 'twitter', 'instagram', 'linkedin', 'email'] as const;
 export type Platform = (typeof SUPPORTED_PLATFORMS)[number];
@@ -25,6 +27,8 @@ export function resolveAdapter(platform: string, flags: ConnectionFlags): Platfo
     if (!flags.apiPublishEnabled) {
       throw new Error('api publish mode requires api_publish_enabled');
     }
+    if (platform === 'facebook') return makeFacebookAdapter();
+    if (platform === 'twitter') return makeTwitterAdapter();
     return makeApiStubAdapter(platform);
   }
   return makeCopyPackAdapter(platform);

@@ -1,6 +1,7 @@
 import type { ZodTypeAny } from 'zod';
 import { facebookCredentialsSchema } from './facebook.js';
 import { twitterCredentialsSchema } from './twitter.js';
+import { emailCredentialsSchema } from './email.js';
 
 export interface CredentialField {
   name: string;
@@ -29,6 +30,18 @@ export const credentialRequirements: Record<string, CredentialRequirements> = {
       { name: 'apiSecret', label: 'API Secret', secret: true },
       { name: 'accessToken', label: 'Access Token', secret: false },
       { name: 'accessSecret', label: 'Access Secret', secret: true },
+    ],
+  },
+  email: {
+    schema: emailCredentialsSchema,
+    fields: [
+      { name: 'provider', label: 'Provider (smtp/sendgrid/resend)', secret: false },
+      { name: 'apiKey', label: 'API Key', secret: true },
+      { name: 'fromAddress', label: 'From Address', secret: false },
+      { name: 'fromName', label: 'From Name', secret: false },
+      { name: 'replyTo', label: 'Reply-To', secret: false },
+      { name: 'physicalAddress', label: 'Physical Mailing Address (CAN-SPAM)', secret: false },
+      { name: 'webhookSecret', label: 'Webhook Signing Secret', secret: true },
     ],
   },
 };
