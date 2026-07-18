@@ -25,6 +25,7 @@ import { registerOpsRoutes } from './routes/ops.js';
 import { registerCalendarRoutes } from './routes/calendar.js';
 import { registerEngagementRoutes } from './routes/engagement.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
+import { deriveUnsubscribeSecret } from '../adapters/api/unsubscribe.js';
 import { StubImageAdapter } from '../adapters/image/stub.js';
 import type { ImageAdapter } from '../adapters/image/types.js';
 import { LlmClient } from '../llm/openrouter.js';
@@ -134,7 +135,7 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
   registerOpsRoutes(app, { db, hooks, providers: research });
   registerCalendarRoutes(app, { db, hooks });
   registerEngagementRoutes(app, { db, hooks, providers: research });
-  registerWebhookRoutes(app, { db, vault, hooks });
+  registerWebhookRoutes(app, { db, vault, hooks, unsubscribeSecret: deriveUnsubscribeSecret(config.CREDENTIALS_MASTER_KEY) });
   if (deps.jobQueue) {
     registerJobRoutes(app, { db, hooks, queue: deps.jobQueue });
   }

@@ -6,6 +6,7 @@ import { emailCredentialsSchema, type EmailCredentials } from '../../credentials
 import { publishedItems } from '../../db/schema/approval-queue.js';
 import { emitAudit } from '../../observability/events.js';
 import { isSuppressed } from './suppression.js';
+import { unsubscribeUrl } from './unsubscribe.js';
 
 export type EmailProvider = (msg: { to: string; from: string; subject: string; html: string }) => Promise<{ messageId: string }>;
 
@@ -38,7 +39,8 @@ export interface SendEmailInput {
   body: string;
   draftId?: string;
   creds: EmailCredentials;
-  unsubscribeUrl: string;
+  /** Base app URL + signing secret; the signed one-click unsubscribe link is minted here. */
+  unsubscribe: { baseUrl: string; secret: string | Buffer };
 }
 
 export interface SendEmailResult {
@@ -75,7 +77,8 @@ export async function sendEmail(
     return { sent: false, blocked: true, reason: 'recipient is on the suppression list' };
   }
 
-  const html = buildEmailHtml(input.body, input.creds, input.unsubscribeUrl);
+  const signedUnsubscribe = unsubscribeUrl(input.unsubscribe.baseUrl, tenantId, input.to, input.unsubscribe.secret);
+  const html = buildEmailHtml(input.body, input.creds, signedUnsubscribe);
 
   if (!deps.provider) {
     return { sent: false, blocked: false, reason: SCAFFOLD };

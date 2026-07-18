@@ -11,6 +11,7 @@ import { makeTwitterAdapter } from './twitter.js';
 import { addSuppression, isSuppressed, importContacts } from './suppression.js';
 import { sendEmail, buildEmailHtml, type EmailProvider } from './email.js';
 import { verifyWebhookSignature, processEmailWebhook } from './webhook.js';
+import { signUnsubscribe, verifyUnsubscribe } from './unsubscribe.js';
 import type { EmailCredentials } from '../../credentials/schemas/email.js';
 
 const creds: EmailCredentials = { provider: 'resend', apiKey: 'k', fromAddress: 'hi@aurora.coffee', fromName: 'Aurora', physicalAddress: '1 Bean St, Coffeeville', webhookSecret: 'whsec_123' };
@@ -53,7 +54,7 @@ describe('Email compliance (Task 8.3, design §21)', () => {
   it('the send gate REFUSES suppressed recipients', async () => {
     await addSuppression(db, T, 'bounced@x.com', 'hard_bounce');
     expect(await isSuppressed(db, T, 'bounced@x.com')).toBe(true);
-    const res = await sendEmail({ db }, T, { to: 'bounced@x.com', subject: 's', body: 'b', creds, unsubscribeUrl: 'https://u' });
+    const res = await sendEmail({ db }, T, { to: 'bounced@x.com', subject: 's', body: 'b', creds, unsubscribe: { baseUrl: 'https://app.test', secret: 'unsub-secret' } });
     expect(res).toMatchObject({ sent: false, blocked: true });
   });
 
@@ -66,7 +67,7 @@ describe('Email compliance (Task 8.3, design §21)', () => {
 
   it('sends via the provider and creates a published_items anchor', async () => {
     const provider: EmailProvider = async () => ({ messageId: 'msg-1' });
-    const res = await sendEmail({ db, provider }, T, { to: 'ok@x.com', subject: 's', body: 'b', creds, unsubscribeUrl: 'https://u' });
+    const res = await sendEmail({ db, provider }, T, { to: 'ok@x.com', subject: 's', body: 'b', creds, unsubscribe: { baseUrl: 'https://app.test', secret: 'unsub-secret' } });
     expect(res.sent).toBe(true);
     expect(res.messageId).toBe('msg-1');
     expect(res.publishedItemId).toBeDefined();
@@ -86,6 +87,15 @@ describe('Email webhooks (Task 8.3b)', () => {
     const sig = createHmac('sha256', 'whsec_123').update(body).digest('hex');
     expect(verifyWebhookSignature(body, 'whsec_123', sig)).toBe(true);
     expect(verifyWebhookSignature(body, 'whsec_123', 'deadbeef')).toBe(false);
+  });
+
+  it('unsubscribe tokens are HMAC-signed and email/tenant-bound', () => {
+    const secret = 'unsub-secret';
+    const sig = signUnsubscribe(T, 'user@x.com', secret);
+    expect(verifyUnsubscribe(T, 'user@x.com', sig, secret)).toBe(true);
+    expect(verifyUnsubscribe(T, 'other@x.com', sig, secret)).toBe(false); // can't reuse for a different address
+    expect(verifyUnsubscribe(randomUUID(), 'user@x.com', sig, secret)).toBe(false); // or a different tenant
+    expect(verifyUnsubscribe(T, 'user@x.com', 'forged', secret)).toBe(false);
   });
 
   it('maps events to metrics and auto-suppresses hard bounces + complaints', async () => {

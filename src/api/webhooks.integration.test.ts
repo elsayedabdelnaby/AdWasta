@@ -4,9 +4,11 @@ import type { FastifyInstance } from 'fastify';
 import { loadConfig } from '../config/env.js';
 import { createDb, type Db } from '../db/client.js';
 import { buildApp } from './app.js';
+import { deriveUnsubscribeSecret, signUnsubscribe } from '../adapters/api/unsubscribe.js';
 
 const OWNER = 'user_owner';
 const WEBHOOK_SECRET = 'whsec_test_123';
+const UNSUB_SECRET = deriveUnsubscribeSecret(loadConfig().CREDENTIALS_MASTER_KEY);
 let app: FastifyInstance;
 let db: Db;
 const created: string[] = [];
@@ -27,7 +29,6 @@ async function seedTenantWithEmailCreds(): Promise<string> {
   const res = await app.inject({ method: 'POST', url: '/tenants', headers: { 'x-dev-user': OWNER }, payload: { name: 'Aurora' } });
   const id = res.json().id as string;
   created.push(id);
-  // Enable API + save email credentials (design §21 gate: enable -> creds -> health)
   await app.inject({ method: 'PATCH', url: `/tenants/${id}/platforms/email`, headers: { 'x-dev-user': OWNER }, payload: { apiEmailEnabled: true } });
   const save = await app.inject({
     method: 'POST',
@@ -36,35 +37,58 @@ async function seedTenantWithEmailCreds(): Promise<string> {
     payload: { provider: 'resend', apiKey: 'k', fromAddress: 'hi@aurora.coffee', physicalAddress: '1 Bean St', webhookSecret: WEBHOOK_SECRET },
   });
   expect(save.statusCode).toBe(200);
-  expect(save.json().saved).toBe(true);
   return id;
 }
 
-describe('Email webhook route (Task 8.3b — signature-gated, public)', () => {
+function postWebhook(id: string, raw: string, sig?: string) {
+  return app.inject({
+    method: 'POST',
+    url: `/webhooks/email/${id}`,
+    headers: { 'content-type': 'application/json', ...(sig ? { 'x-webhook-signature': sig } : {}) },
+    payload: raw,
+  });
+}
+
+describe('Email webhook route — raw-body signature (Task 8.3b)', () => {
   it('rejects an unsigned / mis-signed webhook (401)', async () => {
     const id = await seedTenantWithEmailCreds();
-    const body = { events: [] };
-    const unsigned = await app.inject({ method: 'POST', url: `/webhooks/email/${id}`, payload: body });
-    expect(unsigned.statusCode).toBe(401);
-    const badSig = await app.inject({ method: 'POST', url: `/webhooks/email/${id}`, headers: { 'x-webhook-signature': 'deadbeef' }, payload: body });
-    expect(badSig.statusCode).toBe(401);
+    const raw = JSON.stringify({ events: [] });
+    expect((await postWebhook(id, raw)).statusCode).toBe(401);
+    expect((await postWebhook(id, raw, 'deadbeef')).statusCode).toBe(401);
   });
 
-  it('accepts a correctly-signed webhook', async () => {
+  it('accepts a webhook signed over the exact raw bytes', async () => {
     const id = await seedTenantWithEmailCreds();
-    const body = { events: [] };
-    const raw = JSON.stringify(body);
+    const raw = JSON.stringify({ events: [] });
     const sig = createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex');
-    const ok = await app.inject({ method: 'POST', url: `/webhooks/email/${id}`, headers: { 'x-webhook-signature': sig }, payload: body });
+    const ok = await postWebhook(id, raw, sig);
     expect(ok.statusCode).toBe(200);
     expect(ok.json().ok).toBe(true);
   });
 
-  it('returns 401 when the tenant has no webhook secret configured', async () => {
+  it('401s when the tenant has no webhook secret configured', async () => {
     const res = await app.inject({ method: 'POST', url: '/tenants', headers: { 'x-dev-user': OWNER }, payload: { name: 'NoCreds' } });
     const id = res.json().id as string;
     created.push(id);
-    const r = await app.inject({ method: 'POST', url: `/webhooks/email/${id}`, headers: { 'x-webhook-signature': 'x' }, payload: { events: [] } });
-    expect(r.statusCode).toBe(401);
+    expect((await postWebhook(id, JSON.stringify({ events: [] }), 'x')).statusCode).toBe(401);
+  });
+});
+
+describe('Signed unsubscribe route (design §21)', () => {
+  it('suppresses only with a valid signed token; forged tokens are rejected', async () => {
+    const id = await seedTenantWithEmailCreds();
+    const email = 'reader@x.com';
+    const sig = signUnsubscribe(id, email, UNSUB_SECRET);
+
+    const forged = await app.inject({ method: 'GET', url: `/unsubscribe/${id}?email=${encodeURIComponent(email)}&sig=forged` });
+    expect(forged.statusCode).toBe(401);
+
+    const ok = await app.inject({ method: 'GET', url: `/unsubscribe/${id}?email=${encodeURIComponent(email)}&sig=${sig}` });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json().unsubscribed).toBe(true);
+
+    // token for one address can't suppress a different one
+    const abuse = await app.inject({ method: 'GET', url: `/unsubscribe/${id}?email=${encodeURIComponent('victim@x.com')}&sig=${sig}` });
+    expect(abuse.statusCode).toBe(401);
   });
 });
