@@ -21,6 +21,7 @@ import { registerStrategyRoutes } from './routes/strategy.js';
 import { registerContentRoutes, type ContentProviders } from './routes/content.js';
 import { registerApprovalRoutes } from './routes/approvals.js';
 import { registerMetricsRoutes } from './routes/metrics.js';
+import { registerOpsRoutes } from './routes/ops.js';
 import { StubImageAdapter } from '../adapters/image/stub.js';
 import type { ImageAdapter } from '../adapters/image/types.js';
 import { LlmClient } from '../llm/openrouter.js';
@@ -127,6 +128,7 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
   registerContentRoutes(app, { db, hooks, providers: contentProviders });
   registerApprovalRoutes(app, { db, hooks });
   registerMetricsRoutes(app, { db, hooks, providers: research });
+  registerOpsRoutes(app, { db, hooks, providers: research });
   if (deps.jobQueue) {
     registerJobRoutes(app, { db, hooks, queue: deps.jobQueue });
   }

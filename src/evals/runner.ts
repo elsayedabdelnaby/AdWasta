@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { researchRules, strategyRules, creationRules, measureRules, type EvalRule, type EvalSnapshot } from './rules.js';
+import { researchRules, strategyRules, creationRules, measureRules, briefRules, type EvalRule, type EvalSnapshot } from './rules.js';
 
 export interface NamedSnapshot {
   name: string;
@@ -51,7 +51,7 @@ export function loadFixtures(dir: string): NamedSnapshot[] {
 const isMain = process.argv[1]?.endsWith('runner.ts') || process.argv[1]?.endsWith('runner.js');
 if (isMain) {
   const pillar = process.argv.find((a) => a.startsWith('--pillar='))?.split('=')[1] ?? 'research';
-  const RULES_BY_PILLAR: Record<string, typeof researchRules> = { research: researchRules, strategy: strategyRules, creation: creationRules, measure: measureRules };
+  const RULES_BY_PILLAR: Record<string, typeof researchRules> = { research: researchRules, strategy: strategyRules, creation: creationRules, measure: measureRules, 'daily-brief': briefRules };
   const rules = RULES_BY_PILLAR[pillar];
   if (!rules) {
     // eslint-disable-next-line no-console

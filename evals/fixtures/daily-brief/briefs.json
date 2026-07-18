@@ -1,0 +1,42 @@
+[
+  {
+    "type": "daily_brief",
+    "summary": "Aurora Coffee daily brief — references only profile platforms + competitors.",
+    "data": { "platforms": ["facebook", "instagram"], "allowedPlatforms": ["facebook", "instagram", "email"], "competitorsMentioned": ["Blue Bottle"], "allowedCompetitors": ["Blue Bottle", "Stumptown"] }
+  },
+  {
+    "type": "daily_brief",
+    "summary": "Aurora — email-only day.",
+    "data": { "platforms": ["email"], "allowedPlatforms": ["facebook", "instagram", "email"], "competitorsMentioned": [], "allowedCompetitors": ["Blue Bottle", "Stumptown"] }
+  },
+  {
+    "type": "daily_brief",
+    "summary": "HVAC daily brief.",
+    "data": { "platforms": ["facebook"], "allowedPlatforms": ["facebook", "email"], "competitorsMentioned": ["CoolAir Co"], "allowedCompetitors": ["CoolAir Co"] }
+  },
+  {
+    "type": "daily_brief",
+    "summary": "Fitness studio brief.",
+    "data": { "platforms": ["instagram", "email"], "allowedPlatforms": ["instagram", "email", "facebook"], "competitorsMentioned": [], "allowedCompetitors": ["FitHub"] }
+  },
+  {
+    "type": "daily_brief",
+    "summary": "Bakery brief — competitor watch flagged.",
+    "data": { "platforms": ["facebook"], "allowedPlatforms": ["facebook", "instagram"], "competitorsMentioned": ["Sweet Rival"], "allowedCompetitors": ["Sweet Rival"] }
+  },
+  {
+    "type": "daily_brief",
+    "summary": "B2B SaaS brief.",
+    "data": { "platforms": ["linkedin", "email"], "allowedPlatforms": ["linkedin", "email"], "competitorsMentioned": [], "allowedCompetitors": ["ToolCorp"] }
+  },
+  {
+    "type": "daily_brief",
+    "summary": "Aurora — performance highlights day.",
+    "data": { "platforms": ["facebook", "email"], "allowedPlatforms": ["facebook", "instagram", "email"], "competitorsMentioned": ["Blue Bottle"], "allowedCompetitors": ["Blue Bottle"] }
+  },
+  {
+    "type": "daily_brief",
+    "summary": "Aurora — quiet day, no alerts.",
+    "data": { "platforms": ["instagram"], "allowedPlatforms": ["facebook", "instagram", "email"], "competitorsMentioned": [], "allowedCompetitors": ["Blue Bottle"] }
+  }
+]

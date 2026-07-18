@@ -99,6 +99,24 @@ export const creationRules: EvalRule[] = [
   },
 ];
 
+const subsetOf = (items: unknown, allowed: unknown): boolean =>
+  Array.isArray(items) && Array.isArray(allowed) && items.every((x) => (allowed as unknown[]).includes(x));
+
+export const briefRules: EvalRule[] = [
+  {
+    // The brief references only platforms from the tenant profile (no inventions).
+    name: 'brief-platforms-in-profile',
+    applies: (s) => s.type === 'daily_brief',
+    check: (s) => subsetOf(s.data.platforms, s.data.allowedPlatforms),
+  },
+  {
+    // No competitor names outside the profile's competitor list.
+    name: 'brief-competitors-in-profile',
+    applies: (s) => s.type === 'daily_brief',
+    check: (s) => subsetOf(s.data.competitorsMentioned, s.data.allowedCompetitors),
+  },
+];
+
 export const measureRules: EvalRule[] = [
   {
     // Every insight cites post_metrics rows (design §12.2 non-negotiable).

@@ -92,6 +92,20 @@
       "when": 1784340092274,
       "tag": "0012_measure_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1784341047062,
+      "tag": "0013_daily_briefs",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1784341047660,
+      "tag": "0014_daily_briefs_rls",
+      "breakpoints": true
     }
   ]
 }
