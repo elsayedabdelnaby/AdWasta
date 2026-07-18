@@ -3,6 +3,7 @@ import type { Db } from '../db/client.js';
 import { LlmClient, type ChatMessage, type StepSink } from '../llm/openrouter.js';
 import { routeModel, type ModelTiers, type TaskClass } from '../config/model-routing.js';
 import type { SearchProvider } from '../tools/search-web.js';
+import type { PageFetchLike } from '../tools/fetch-page.js';
 import { sanitizeExternal } from '../guardrails/sanitize-external.js';
 import { intelSnapshots } from '../db/schema/intel-snapshots.js';
 import { emitEvent } from '../observability/events.js';
@@ -15,6 +16,8 @@ export interface IntelArmDeps {
   models: ModelTiers;
   trace?: StepSink;
   traceId?: string;
+  /** Injectable page fetcher (tests/offline); defaults to global fetch. */
+  pageFetch?: PageFetchLike;
 }
 
 export interface IntelArmConfig<T> {
@@ -28,6 +31,8 @@ export interface IntelArmConfig<T> {
   competitorId?: string;
   /** Extra sanitized context (e.g. pasted intel) folded into the prompt. */
   extraContext?: string;
+  /** Real source URLs behind extraContext (e.g. the tenant's own website). */
+  extraCitations?: string[];
 }
 
 export interface IntelArmOutput<T> {
@@ -53,6 +58,7 @@ export async function runIntelArm<T>(
     citations.push(...res.citations);
     for (const r of res.results) contextParts.push(`# ${r.title}\n${r.snippet}\n(${r.url})`);
   }
+  citations.push(...(config.extraCitations ?? []));
   const rawContext = [contextParts.join('\n\n'), config.extraContext ?? ''].filter(Boolean).join('\n\n');
   const sanitized = sanitizeExternal(rawContext);
 

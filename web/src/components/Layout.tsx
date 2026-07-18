@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useSession } from '../context/Session';
 import { useToast } from './Toast';
 import { useResource } from '../lib/useResource';
@@ -28,16 +28,31 @@ function NavSection({ title, items }: { title: string; items: NavItem[] }) {
 function TenantBar() {
   const { user, setUser, tenantId, setTenantId, api } = useSession();
   const toast = useToast();
+  const navigate = useNavigate();
   const [draft, setDraft] = useState(tenantId ?? '');
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [industry, setIndustry] = useState('');
 
   async function createTenant() {
+    if (!name.trim()) {
+      toast.fail('Give the workspace a name');
+      return;
+    }
     setBusy(true);
     try {
-      const r = await api.post<{ id: string }>('/tenants', { name: 'New Workspace', industry: 'demo' });
+      const r = await api.post<{ id: string }>('/tenants', {
+        name: name.trim(),
+        industry: industry.trim() || undefined,
+      });
       setTenantId(r.id);
       setDraft(r.id);
-      toast.notify('Workspace created');
+      setCreating(false);
+      setName('');
+      setIndustry('');
+      toast.notify('Workspace created — now fill in the business profile');
+      navigate('/onboard');
     } catch (e) {
       toast.fail(e instanceof ApiError ? `Create failed: ${e.status}` : String(e));
     } finally {
@@ -51,19 +66,29 @@ function TenantBar() {
         <span>User</span>
         <input value={user} onChange={(e) => setUser(e.target.value)} title="x-dev-user (dev auth)" />
       </div>
-      <div className="idbox">
-        <span>Tenant</span>
-        <input
-          value={draft}
-          placeholder="paste a tenant id…"
-          onChange={(e) => setDraft(e.target.value)}
-          className="mono"
-        />
-        <button className="sm" onClick={() => setTenantId(draft.trim() || null)}>Use</button>
-        <button className="sm" onClick={createTenant} disabled={busy}>
-          {busy ? <span className="spinner" /> : 'New'}
-        </button>
-      </div>
+      {creating ? (
+        <div className="idbox">
+          <span>New workspace</span>
+          <input value={name} placeholder="business name" aria-label="Workspace name" onChange={(e) => setName(e.target.value)} />
+          <input value={industry} placeholder="industry (drives research)" aria-label="Industry" onChange={(e) => setIndustry(e.target.value)} />
+          <button className="sm" onClick={createTenant} disabled={busy}>
+            {busy ? <span className="spinner" /> : 'Create'}
+          </button>
+          <button className="sm" onClick={() => setCreating(false)} disabled={busy}>Cancel</button>
+        </div>
+      ) : (
+        <div className="idbox">
+          <span>Tenant</span>
+          <input
+            value={draft}
+            placeholder="paste a tenant id…"
+            onChange={(e) => setDraft(e.target.value)}
+            className="mono"
+          />
+          <button className="sm" onClick={() => setTenantId(draft.trim() || null)}>Use</button>
+          <button className="sm" onClick={() => setCreating(true)}>New</button>
+        </div>
+      )}
       <div className="spacer" />
       {tenantId ? <span className="badge green">connected</span> : <span className="badge amber">no tenant</span>}
     </div>

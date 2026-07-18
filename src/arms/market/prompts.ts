@@ -13,9 +13,19 @@ export const MarketSchema = z.object({
 export type MarketData = z.infer<typeof MarketSchema>;
 
 export function buildMarketMessages(
-  profile: { industry?: string; audience?: string; geography?: string },
+  profile: {
+    industry?: string;
+    audience?: string;
+    geography?: string;
+    website?: string;
+    socialUrls?: Record<string, string>;
+  },
   sanitizedContext: string,
 ): ChatMessage[] {
+  const socials = Object.entries(profile.socialUrls ?? {});
+  const links =
+    (profile.website ? ` Website: ${profile.website}.` : '') +
+    (socials.length ? ` Social pages: ${socials.map(([k, v]) => `${k} ${v}`).join(', ')}.` : '');
   return [
     {
       role: 'system',
@@ -28,7 +38,7 @@ export function buildMarketMessages(
       role: 'user',
       content:
         `Business industry: ${profile.industry ?? 'unknown'}. Audience: ${profile.audience ?? 'unknown'}. ` +
-        `Geography: ${profile.geography ?? 'unknown'}.\n\nSearch context:\n${sanitizedContext}`,
+        `Geography: ${profile.geography ?? 'unknown'}.${links}\n\nSearch context:\n${sanitizedContext}`,
     },
   ];
 }

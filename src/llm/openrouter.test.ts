@@ -96,4 +96,48 @@ describe('LlmClient.structuredComplete', () => {
       client.structuredComplete({ model: 'm-balanced', messages: [{ role: 'user', content: 'x' }], schema }),
     ).rejects.toBeInstanceOf(LLMRecoverableError);
   });
+
+  it('repairs a schema failure by feeding the validation errors back to the model', async () => {
+    const transport = vi
+      .fn<LlmTransport>()
+      .mockResolvedValueOnce({
+        text: '{"sentiment":"POS","score":"high"}',
+        usage: { promptTokens: 1, completionTokens: 1 },
+        model: 'm-balanced',
+      })
+      .mockResolvedValueOnce({
+        text: '{"sentiment":"pos","score":0.9}',
+        usage: { promptTokens: 1, completionTokens: 1 },
+        model: 'm-balanced',
+      });
+    const client = new LlmClient({ transport, prices, sleep: noSleep });
+    const out = await client.structuredComplete({
+      model: 'm-balanced',
+      messages: [{ role: 'user', content: 'classify' }],
+      schema,
+    });
+    expect(out).toEqual({ sentiment: 'pos', score: 0.9 });
+    expect(transport).toHaveBeenCalledTimes(2);
+
+    // The repair turn must show the model its bad reply and the exact errors.
+    const repairMessages = transport.mock.calls[1]![0].messages;
+    const assistant = repairMessages.find((m) => m.role === 'assistant');
+    expect(assistant?.content).toContain('"POS"');
+    const lastUser = [...repairMessages].reverse().find((m) => m.role === 'user');
+    expect(lastUser?.content).toMatch(/sentiment/);
+    expect(lastUser?.content).toMatch(/corrected JSON/i);
+  });
+
+  it('gives up after one failed repair attempt', async () => {
+    const transport = vi.fn<LlmTransport>().mockResolvedValue({
+      text: '{"sentiment":"maybe","score":"high"}',
+      usage: { promptTokens: 1, completionTokens: 1 },
+      model: 'm-balanced',
+    });
+    const client = new LlmClient({ transport, prices, sleep: noSleep });
+    await expect(
+      client.structuredComplete({ model: 'm-balanced', messages: [{ role: 'user', content: 'x' }], schema }),
+    ).rejects.toBeInstanceOf(LLMRecoverableError);
+    expect(transport).toHaveBeenCalledTimes(2); // initial + 1 repair, then stop
+  });
 });

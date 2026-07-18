@@ -3,8 +3,11 @@ import type { ChatMessage } from '../../llm/openrouter.js';
 
 export const PROMPT_VERSION = 'strategy@1.0.0';
 
+/** Models routinely return enum values with the wrong case ("B2C") — normalize before validating. */
+const lowered = z.string().transform((s) => s.toLowerCase());
+
 export const ICPSchema = z.object({
-  audienceModel: z.enum(['b2b', 'b2c']),
+  audienceModel: lowered.pipe(z.enum(['b2b', 'b2c'])),
   segments: z.array(z.string()).min(1),
   triggers: z.array(z.string()),
   objections: z.array(z.string()),
@@ -32,7 +35,7 @@ export const AnglesSchema = z.object({
   angles: z
     .array(
       z.object({
-        channel: z.enum(['social', 'email']),
+        channel: lowered.pipe(z.enum(['social', 'email'])),
         angle: z.string(),
         hooks: z.array(z.string()),
         proofPoints: z.array(z.string()),
@@ -47,7 +50,7 @@ export const PlanSchema = z.object({
   horizonDays: z.number().int().positive(),
   channels: z.array(z.string()).min(1),
   themes: z.array(z.string()),
-  kpis: z.array(z.object({ name: z.string(), class: z.enum(KPI_CLASSES) })),
+  kpis: z.array(z.object({ name: z.string(), class: lowered.pipe(z.enum(KPI_CLASSES)) })),
 });
 export type PlanData = z.infer<typeof PlanSchema>;
 

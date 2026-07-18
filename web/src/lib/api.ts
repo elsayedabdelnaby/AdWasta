@@ -25,6 +25,10 @@ export interface ApiClient {
   get<T>(path: string): Promise<T>;
   post<T>(path: string, body?: unknown): Promise<T>;
   patch<T>(path: string, body?: unknown): Promise<T>;
+  /** GET a binary resource (e.g. the tenant logo). Returns null on 404. */
+  getBlob(path: string): Promise<Blob | null>;
+  /** PUT a binary body with its real content type (e.g. a logo image). */
+  putBinary(path: string, body: Blob): Promise<void>;
 }
 
 export function createApi(getAuth: () => AuthContext): ApiClient {
@@ -46,10 +50,35 @@ export function createApi(getAuth: () => AuthContext): ApiClient {
     return (text ? JSON.parse(text) : {}) as T;
   }
 
+  function authHeaders(contentType?: string): Record<string, string> {
+    const { user } = getAuth();
+    const headers: Record<string, string> = {};
+    if (contentType) headers['content-type'] = contentType;
+    if (user) headers['x-dev-user'] = user;
+    return headers;
+  }
+
   return {
     request,
     get: (path) => request('GET', path),
     post: (path, body) => request('POST', path, body),
     patch: (path, body) => request('PATCH', path, body),
+    getBlob: async (path) => {
+      const { base = '/api' } = getAuth();
+      const res = await fetch(base + path, { headers: authHeaders(), credentials: 'include' });
+      if (res.status === 404) return null;
+      if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => ''));
+      return res.blob();
+    },
+    putBinary: async (path, body) => {
+      const { base = '/api' } = getAuth();
+      const res = await fetch(base + path, {
+        method: 'PUT',
+        headers: authHeaders(body.type || 'application/octet-stream'),
+        credentials: 'include',
+        body,
+      });
+      if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => ''));
+    },
   };
 }

@@ -29,7 +29,16 @@ export function mockApi(routes: Record<string, unknown | ((body: unknown) => unk
   const fn = vi.fn(async (url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     const path = url.replace(/^\/api/, '');
-    const body = init?.body ? JSON.parse(init.body as string) : undefined;
+    let body: unknown;
+    if (typeof init?.body === 'string') {
+      try {
+        body = JSON.parse(init.body);
+      } catch {
+        body = init.body;
+      }
+    } else {
+      body = init?.body; // binary uploads (Blob/File) pass through unparsed
+    }
     calls.push({ method, path, body });
     const key = `${method} ${path}`;
     let handler = routes[key];

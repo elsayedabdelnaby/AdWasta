@@ -162,6 +162,20 @@
       "when": 1784342807383,
       "tag": "0022_email_suppressions_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1784380000000,
+      "tag": "0023_tenant_profile_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1784381000000,
+      "tag": "0024_tenant_logo",
+      "breakpoints": true
     }
   ]
 }

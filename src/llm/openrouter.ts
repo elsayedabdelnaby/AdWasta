@@ -146,8 +146,10 @@ export class LlmClient {
     }
   }
 
-  /** Chat that must return JSON matching `schema`. Parse/validation failure is
-   *  an LLM-recoverable error the caller can surface back to the model. */
+  /** Chat that must return JSON matching `schema`. On a parse/validation
+   *  failure the model gets ONE repair turn — its bad reply plus the exact
+   *  validation errors — before we give up with an LLM-recoverable error.
+   *  (Models routinely miss enum casing etc.; a repair turn fixes most runs.) */
   async structuredComplete<T>(args: {
     model: string;
     messages: ChatMessage[];
@@ -160,21 +162,35 @@ export class LlmClient {
       { role: 'system', content: 'Respond with ONLY a single JSON object. No prose, no code fences.' },
       ...args.messages,
     ];
-    const res = await this.chat({ model: args.model, messages, trace: args.trace });
-    const raw = extractJson(res.text);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      throw new LLMRecoverableError(`model did not return valid JSON: ${res.text.slice(0, 200)}`);
-    }
-    const result = args.schema.safeParse(parsed);
-    if (!result.success) {
-      throw new LLMRecoverableError(
-        `model JSON failed schema: ${result.error.issues.map((i) => i.message).join('; ')}`,
+
+    const maxTurns = 2; // initial + 1 repair
+    let lastError = '';
+    for (let turn = 0; turn < maxTurns; turn++) {
+      const res = await this.chat({ model: args.model, messages, trace: args.trace });
+      let failure: string;
+      try {
+        const parsed: unknown = JSON.parse(extractJson(res.text));
+        const result = args.schema.safeParse(parsed);
+        if (result.success) return result.data;
+        failure = result.error.issues
+          .map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`)
+          .join('; ');
+      } catch {
+        failure = `not valid JSON: ${res.text.slice(0, 200)}`;
+      }
+      lastError = failure;
+      messages.push(
+        { role: 'assistant', content: res.text },
+        {
+          role: 'user',
+          content:
+            `Your JSON failed validation:\n${failure}\n\n` +
+            'Return ONLY the corrected JSON object. Fix exactly these issues; keep everything else the same. ' +
+            'Match enum values exactly (including letter case) and use plain strings where strings are required.',
+        },
       );
     }
-    return result.data;
+    throw new LLMRecoverableError(`model JSON failed schema after repair attempt: ${lastError}`);
   }
 }
 

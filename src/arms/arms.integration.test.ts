@@ -70,6 +70,69 @@ describe('RESEARCH arms (Tasks 1.2–1.4)', () => {
     expect(rows[0]!.citations.length).toBeGreaterThan(0);
   });
 
+  it('market arm learns from the tenant website: page text reaches the prompt, url is cited', async () => {
+    const T2 = randomUUID();
+    await db.withTenant(T2, async (tx) => {
+      await tx.insert(tenants).values({ id: T2, name: 'Mehrab Alquran', industry: 'islamic decor' });
+      await tx.insert(tenantProfiles).values({
+        tenantId: T2,
+        audience: 'mosques and gift buyers',
+        website: 'https://mehrab-alquran.com',
+      });
+    });
+    const prompts: string[] = [];
+    const capturingTransport: LlmTransport = async ({ messages }) => {
+      prompts.push(messages.map((m) => m.content).join('\n'));
+      return { text: JSON.stringify(marketFixture), usage: { promptTokens: 10, completionTokens: 10 }, model: 'test-model' };
+    };
+    const d: IntelArmDeps = {
+      ...deps,
+      llm: new LlmClient({ transport: capturingTransport, sleep: async () => {} }),
+      pageFetch: async () => ({
+        status: 200,
+        text: async () => '<h1>Mehrab Alquran</h1><p>Handcrafted prayer niches and islamic wall decor.</p>',
+      }),
+    };
+
+    try {
+      const res = await runMarketArm(d, T2);
+      expect(res.citations).toContain('https://mehrab-alquran.com');
+      const prompt = prompts.join('\n');
+      expect(prompt).toContain('Handcrafted prayer niches and islamic wall decor.');
+      // Website text rides inside the untrusted wrapper, never as instructions.
+      expect(prompt).toContain('<untrusted_content>');
+    } finally {
+      await db.adminPool.query('DELETE FROM intel_snapshots WHERE tenant_id = $1', [T2]);
+      await db.adminPool.query('DELETE FROM system_events WHERE tenant_id = $1', [T2]);
+      await db.adminPool.query('DELETE FROM tenant_profiles WHERE tenant_id = $1', [T2]);
+      await db.adminPool.query('DELETE FROM tenants WHERE id = $1', [T2]);
+    }
+  });
+
+  it('market arm survives a dead website (research proceeds on search context)', async () => {
+    const T3 = randomUUID();
+    await db.withTenant(T3, async (tx) => {
+      await tx.insert(tenants).values({ id: T3, name: 'Dead Site Co', industry: 'retail' });
+      await tx.insert(tenantProfiles).values({ tenantId: T3, website: 'https://gone.example' });
+    });
+    const d: IntelArmDeps = {
+      ...deps,
+      pageFetch: async () => {
+        throw new Error('ECONNREFUSED');
+      },
+    };
+    try {
+      const res = await runMarketArm(d, T3);
+      expect(res.arm).toBe('market');
+      expect(res.citations).toEqual(['https://ex.com/coffee']);
+    } finally {
+      await db.adminPool.query('DELETE FROM intel_snapshots WHERE tenant_id = $1', [T3]);
+      await db.adminPool.query('DELETE FROM system_events WHERE tenant_id = $1', [T3]);
+      await db.adminPool.query('DELETE FROM tenant_profiles WHERE tenant_id = $1', [T3]);
+      await db.adminPool.query('DELETE FROM tenants WHERE id = $1', [T3]);
+    }
+  });
+
   it('trend arm produces a cited trend snapshot', async () => {
     const res = await runTrendArm(deps, T);
     expect(res.arm).toBe('trends');
