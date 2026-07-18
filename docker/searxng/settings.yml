@@ -1,0 +1,26 @@
+# SearXNG overrides for AdWasta's self-hosted intel search (design §12.3).
+# Layers on top of the image defaults; only what we need to change is listed.
+use_default_settings:
+  engines:
+    # Wikidata blocks datacenter/cloud IPs at init (403 from its SPARQL
+    # endpoint), which spams the log every boot. The intel arms need web/SERP
+    # results, not Wikidata facts, so remove the engine entirely ("disabled"
+    # is not enough — init still runs for disabled engines).
+    remove:
+      - wikidata
+
+server:
+  # CHANGE THIS in any shared/production deploy. Only the API on the internal
+  # docker network talks to SearXNG, but it must still be a non-guessable value.
+  secret_key: "adwasta-dev-searxng-secret-change-me"
+  # The RESEARCH arms call SearXNG programmatically; the bot limiter would 429
+  # those server-to-server calls. Safe here because the port is not published
+  # to the public internet (internal docker network only).
+  limiter: false
+  image_proxy: false
+
+search:
+  # JSON is disabled by default; the provider needs it (SearxngSearchProvider).
+  formats:
+    - html
+    - json

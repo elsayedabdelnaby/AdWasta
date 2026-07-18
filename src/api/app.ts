@@ -29,7 +29,12 @@ import { deriveUnsubscribeSecret } from '../adapters/api/unsubscribe.js';
 import { StubImageAdapter } from '../adapters/image/stub.js';
 import type { ImageAdapter } from '../adapters/image/types.js';
 import { LlmClient } from '../llm/openrouter.js';
-import { BraveSearchProvider, FixtureSearchProvider } from '../tools/search-web.js';
+import {
+  BraveSearchProvider,
+  TavilySearchProvider,
+  SearxngSearchProvider,
+  FixtureSearchProvider,
+} from '../tools/search-web.js';
 import { modelTiersFromConfig } from '../config/model-routing.js';
 import type { Queue } from 'bullmq';
 import type { ArmJobData } from '../queue/jobs.js';
@@ -117,9 +122,15 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
   registerEventRoutes(app, { db, hooks });
   const research: ResearchProviders = deps.research ?? {
     llm: new LlmClient({ apiKey: config.OPENROUTER_API_KEY, baseUrl: config.OPENROUTER_BASE_URL }),
-    search: config.BRAVE_API_KEY
-      ? new BraveSearchProvider(config.BRAVE_API_KEY)
-      : new FixtureSearchProvider({}),
+    // Provider preference (design §12.3): self-hosted SearXNG → Tavily → Brave →
+    // offline fixtures. A var set to an empty/placeholder value falls through.
+    search: config.SEARXNG_URL?.trim()
+      ? new SearxngSearchProvider(config.SEARXNG_URL.trim())
+      : config.TAVILY_API_KEY?.trim()
+        ? new TavilySearchProvider(config.TAVILY_API_KEY.trim())
+        : config.BRAVE_API_KEY?.trim()
+          ? new BraveSearchProvider(config.BRAVE_API_KEY.trim())
+          : new FixtureSearchProvider({}),
     models: modelTiersFromConfig(config),
   };
   registerIntelRoutes(app, { db, hooks, providers: research });

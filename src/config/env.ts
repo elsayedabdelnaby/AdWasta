@@ -39,6 +39,8 @@ const EnvSchema = z.object({
   MODEL_DEEP: z.string().default('anthropic/claude-sonnet-4'),
   BRAVE_API_KEY: z.string().optional(),
   TAVILY_API_KEY: z.string().optional(),
+  // Self-hosted SearXNG instance (keyless). e.g. http://searxng:8080
+  SEARXNG_URL: z.string().optional(),
 
   DAILY_BUDGET_USD: z.coerce.number().nonnegative().default(10),
   MONTHLY_BUDGET_USD: z.coerce.number().nonnegative().default(50),
