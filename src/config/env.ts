@@ -21,6 +21,10 @@ const EnvSchema = z.object({
   DATABASE_ADMIN_URL: z.string().min(1).optional(),
   REDIS_URL: z.string().min(1).default('redis://localhost:6379'),
 
+  // Comma-separated first-party origins allowed to make credentialed requests.
+  // Never reflect an arbitrary Origin with credentialed CORS (CSRF/cred-read risk).
+  CORS_ORIGINS: z.string().default('http://localhost:8080,http://localhost:5173'),
+
   CREDENTIALS_MASTER_KEY: base64Key32,
 
   AUTH_PROVIDER: z.enum(['dev', 'workos']).optional(),

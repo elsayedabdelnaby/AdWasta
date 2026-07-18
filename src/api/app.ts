@@ -43,7 +43,19 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
   const { config, db } = deps;
   const app = Fastify({ logger: config.NODE_ENV === 'development' });
 
-  await app.register(cors, { origin: true, credentials: true });
+  // Credentialed CORS restricted to a first-party allowlist. Reflecting an
+  // arbitrary Origin here (origin: true) with credentials would let any site make
+  // authenticated cross-site requests against the cookie session (CSRF/cred-read).
+  const allowedOrigins = config.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
+  await app.register(cors, {
+    origin: (origin, cb) => {
+      // No Origin header = non-browser or same-origin (curl, server-to-server) —
+      // not a credentialed cross-site read, so allow. Otherwise require allowlist.
+      if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+      return cb(null, false);
+    },
+    credentials: true,
+  });
   await app.register(cookie);
 
   if (deps.rateLimit) {
