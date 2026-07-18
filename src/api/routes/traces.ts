@@ -4,8 +4,10 @@ import type { FastifyInstance } from 'fastify';
 import type { Db } from '../../db/client.js';
 import type { AuthHooks } from '../../auth/hook.js';
 import { agentTraces } from '../../db/schema/agent-traces.js';
+import { costSummary } from '../../observability/cost.js';
 
 const ListQuery = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) });
+const CostQuery = z.object({ days: z.coerce.number().int().min(1).max(365).default(30) });
 
 export function registerTraceRoutes(
   app: FastifyInstance,
@@ -20,6 +22,12 @@ export function registerTraceRoutes(
       tx.select().from(agentTraces).orderBy(desc(agentTraces.createdAt)).limit(limit),
     );
     return { traces };
+  });
+
+  // Cost rollup per day / per arm (design §18, §22).
+  app.get('/tenants/:id/metrics', { preHandler: hooks.requireTenantMember }, async (req) => {
+    const { days } = CostQuery.parse(req.query);
+    return costSummary(db, req.tenantId!, { days });
   });
 
   app.get('/traces/:id', async (req, reply) => {
