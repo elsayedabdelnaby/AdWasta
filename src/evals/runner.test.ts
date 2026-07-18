@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { join } from 'node:path';
-import { evaluate, loadFixtures, PASS_THRESHOLD } from './runner.js';
+import { evaluate, loadFixtures, PASS_THRESHOLD, runPillar, ALL_PILLARS } from './runner.js';
 import { researchRules, strategyRules, creationRules, measureRules, briefRules, type EvalSnapshot } from './rules.js';
 
 const goodMarket: EvalSnapshot = { type: 'market', summary: 'ok', data: { keywords: ['cold brew'] }, citations: ['https://a'] };
@@ -58,5 +58,14 @@ describe('eval runner (design §17)', () => {
     expect(fixtures.length).toBeGreaterThanOrEqual(8);
     const report = evaluate(fixtures, briefRules);
     expect(report.passRate).toBeGreaterThanOrEqual(PASS_THRESHOLD);
+  });
+
+  it('every pillar clears the gate via runPillar (Task 10.1 all-arms)', () => {
+    expect(ALL_PILLARS).toEqual(['research', 'strategy', 'creation', 'measure', 'daily-brief']);
+    for (const pillar of ALL_PILLARS) {
+      const r = runPillar(pillar);
+      expect(r.fixtures).toBeGreaterThanOrEqual(8);
+      expect(r.passRate).toBeGreaterThanOrEqual(PASS_THRESHOLD);
+    }
   });
 });
