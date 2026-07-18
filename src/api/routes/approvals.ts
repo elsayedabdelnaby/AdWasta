@@ -5,6 +5,7 @@ import type { Db } from '../../db/client.js';
 import type { AuthHooks } from '../../auth/hook.js';
 import { approvalQueue } from '../../db/schema/approval-queue.js';
 import { contentDrafts } from '../../db/schema/content-drafts.js';
+import { engagementItems } from '../../db/schema/engagement-items.js';
 import { emitAudit } from '../../observability/events.js';
 import { applyUtm } from '../../arms/content/utm.js';
 
@@ -59,6 +60,8 @@ export function registerApprovalRoutes(
       await tx.update(approvalQueue).set({ status: approvalStatus, decidedBy: userId, decidedAt: new Date() }).where(eq(approvalQueue.id, approvalId));
       if (approval.resourceType === 'content_draft') {
         await tx.update(contentDrafts).set({ status: approvalStatus, updatedAt: new Date() }).where(and(eq(contentDrafts.id, approval.resourceId), eq(contentDrafts.tenantId, tenantId)));
+      } else if (approval.resourceType === 'engagement_item') {
+        await tx.update(engagementItems).set({ status: approvalStatus, updatedAt: new Date() }).where(and(eq(engagementItems.id, approval.resourceId), eq(engagementItems.tenantId, tenantId)));
       }
       await emitAudit(tx, tenantId, { actorType: 'user', actorId: userId, category: 'approval', action: `draft.${approvalStatus}`, resourceType: approval.resourceType, resourceId: approval.resourceId, message: `${approval.kind} ${approvalStatus}` });
       return { ok: true as const };

@@ -19,5 +19,11 @@ export function makeCopyPackAdapter(platform: string): PlatformAdapter {
       // Copy pack is human-driven: nothing is sent. Marks the item ready to paste.
       return { status: 'ready', mode: 'copy_pack', draftId: input.draftId };
     },
+    async replyToComment(input) {
+      return { status: 'ready', mode: 'copy_pack', engagementItemId: input.engagementItemId };
+    },
+    async replyToMessage(input) {
+      return { status: 'ready', mode: 'copy_pack', engagementItemId: input.engagementItemId };
+    },
   };
 }

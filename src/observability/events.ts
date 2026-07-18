@@ -35,6 +35,13 @@ export function sanitizeEventPayload(
   return sanitizeValue(payload) as Record<string, unknown>;
 }
 
+/** Redact emails + phone numbers from free text (design §10.1 — stricter for DMs). */
+export function redactPii(text: string): string {
+  return text
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[email]')
+    .replace(/\+?\d[\d\s().-]{7,}\d/g, '[phone]');
+}
+
 function sanitizeValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sanitizeValue);
   if (value && typeof value === 'object') {
