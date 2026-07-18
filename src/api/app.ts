@@ -16,6 +16,10 @@ import { registerPlatformRoutes } from './routes/platforms.js';
 import { registerJobRoutes } from './routes/jobs.js';
 import { registerTraceRoutes } from './routes/traces.js';
 import { registerEventRoutes } from './routes/events.js';
+import { registerIntelRoutes, type ResearchProviders } from './routes/intel.js';
+import { LlmClient } from '../llm/openrouter.js';
+import { BraveSearchProvider, FixtureSearchProvider } from '../tools/search-web.js';
+import { modelTiersFromConfig } from '../config/model-routing.js';
 import type { Queue } from 'bullmq';
 import type { ArmJobData } from '../queue/jobs.js';
 
@@ -32,6 +36,8 @@ export interface BuildAppDeps {
   redis?: Redis;
   /** Per-tenant rate limit. Keyed by tenant (falls back to IP). */
   rateLimit?: { max: number; timeWindow: number | string };
+  /** RESEARCH providers (LLM + search + model tiers). Injected in tests. */
+  research?: ResearchProviders;
 }
 
 /**
@@ -96,6 +102,14 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
   registerPlatformRoutes(app, { db, hooks, vault });
   registerTraceRoutes(app, { db, hooks });
   registerEventRoutes(app, { db, hooks });
+  const research: ResearchProviders = deps.research ?? {
+    llm: new LlmClient({ apiKey: config.OPENROUTER_API_KEY, baseUrl: config.OPENROUTER_BASE_URL }),
+    search: config.BRAVE_API_KEY
+      ? new BraveSearchProvider(config.BRAVE_API_KEY)
+      : new FixtureSearchProvider({}),
+    models: modelTiersFromConfig(config),
+  };
+  registerIntelRoutes(app, { db, hooks, providers: research });
   if (deps.jobQueue) {
     registerJobRoutes(app, { db, hooks, queue: deps.jobQueue });
   }

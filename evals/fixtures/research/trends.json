@@ -1,0 +1,44 @@
+[
+  {
+    "type": "trend",
+    "summary": "Oat milk continues to displace dairy in specialty coffee; low-sugar cold brew is emerging.",
+    "data": {
+      "trends": [
+        { "name": "oat milk default", "relevance": "high", "why": "customers increasingly ask for it by name" },
+        { "name": "low-sugar cold brew", "relevance": "medium", "why": "health-conscious summer demand" }
+      ]
+    },
+    "citations": ["https://example.com/coffee-trend-1", "https://example.com/coffee-trend-2"]
+  },
+  {
+    "type": "trend",
+    "summary": "Smart thermostat rebates are driving HVAC upsell conversations.",
+    "data": {
+      "trends": [
+        { "name": "smart thermostat rebates", "relevance": "high", "why": "utility incentives create install demand" }
+      ]
+    },
+    "citations": ["https://example.com/hvac-trend"]
+  },
+  {
+    "type": "trend",
+    "summary": "Recovery and mobility classes are the fastest-growing boutique fitness format.",
+    "data": {
+      "trends": [
+        { "name": "mobility/recovery classes", "relevance": "high", "why": "aging clientele and injury prevention" },
+        { "name": "wearable-integrated workouts", "relevance": "medium", "why": "data-driven members" }
+      ]
+    },
+    "citations": ["https://example.com/fitness-trend"]
+  },
+  {
+    "type": "trend",
+    "summary": "Allergen-free custom cakes are trending for kids' parties.",
+    "data": {
+      "trends": [
+        { "name": "allergen-free custom cakes", "relevance": "high", "why": "parents filtering by dietary needs" }
+      ]
+    },
+    "citations": ["https://example.com/bakery-trend-1", "https://example.com/bakery-trend-2"]
+  }
+]

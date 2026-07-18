@@ -12,7 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "echo 'seed — Phase 0 (no seed data yet)'",
-    "evals:run": "echo 'evals — Phase 10'"
+    "evals:run": "tsx src/evals/runner.ts"
   },
   "engines": {
     "node": ">=22"

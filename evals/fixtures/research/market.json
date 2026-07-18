@@ -1,0 +1,46 @@
+[
+  {
+    "type": "market",
+    "summary": "Specialty coffee demand is rising in urban markets; cold brew and nitro lead search interest.",
+    "data": {
+      "keywords": ["cold brew", "nitro coffee", "specialty roaster", "oat milk latte"],
+      "demandSignals": ["rising search volume for cold brew", "premium price tolerance"],
+      "serpLandscape": "national chains dominate branded terms; local gaps on 'near me' queries",
+      "categoryGaps": ["subscription cold brew", "low-sugar options"]
+    },
+    "citations": ["https://example.com/coffee-trends", "https://example.com/serp-coffee"]
+  },
+  {
+    "type": "market",
+    "summary": "HVAC service demand peaks seasonally; emergency repair keywords convert best.",
+    "data": {
+      "keywords": ["ac repair near me", "furnace tune up", "hvac maintenance plan"],
+      "demandSignals": ["summer spike in AC repair", "financing interest growing"],
+      "serpLandscape": "aggregators rank above local providers on generic terms",
+      "categoryGaps": ["transparent flat-rate pricing", "same-day booking"]
+    },
+    "citations": ["https://example.com/hvac-demand", "https://example.com/hvac-serp"]
+  },
+  {
+    "type": "market",
+    "summary": "Boutique fitness studios see demand shift toward hybrid in-person/online memberships.",
+    "data": {
+      "keywords": ["hybrid gym membership", "boutique fitness", "class booking app"],
+      "demandSignals": ["online class retention improving", "corporate wellness budgets up"],
+      "serpLandscape": "franchise brands own head terms; long-tail class types are open",
+      "categoryGaps": ["family memberships", "recovery-focused classes"]
+    },
+    "citations": ["https://example.com/fitness-market"]
+  },
+  {
+    "type": "market",
+    "summary": "Local bakery category shows strong 'custom cake' intent with weak local SEO competition.",
+    "data": {
+      "keywords": ["custom birthday cake", "gluten free bakery", "wedding cake quote"],
+      "demandSignals": ["custom order inquiries rising", "dietary-restriction demand"],
+      "serpLandscape": "few local competitors optimize for custom-order terms",
+      "categoryGaps": ["online ordering", "allergen transparency"]
+    },
+    "citations": ["https://example.com/bakery-keywords", "https://example.com/bakery-serp"]
+  }
+]

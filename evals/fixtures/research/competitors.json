@@ -1,0 +1,58 @@
+[
+  {
+    "type": "competitor",
+    "summary": "Blue Bottle ramped a summer cold-brew promo with daily posts and a limited-time hook.",
+    "data": {
+      "cadence": "daily",
+      "themes": ["summer", "cold brew"],
+      "hooks": ["limited time", "summer exclusive"],
+      "gaps": ["no loyalty program", "little user-generated content"],
+      "recommendations": ["counter with a loyalty offer", "lean into local sourcing story"],
+      "campaignSignal": true,
+      "signalSummary": "burst of promo posts indicates a summer campaign launch"
+    },
+    "citations": ["https://example.com/competitor-bb-1", "https://example.com/competitor-bb-2"]
+  },
+  {
+    "type": "competitor",
+    "summary": "Regional HVAC competitor is steady with no new campaign; maintenance-plan messaging dominates.",
+    "data": {
+      "cadence": "weekly",
+      "themes": ["maintenance plans"],
+      "hooks": ["peace of mind"],
+      "gaps": ["no emergency-service messaging"],
+      "recommendations": ["own the same-day emergency angle"],
+      "campaignSignal": false,
+      "signalSummary": "no material change vs previous snapshot"
+    },
+    "citations": ["https://example.com/competitor-hvac"]
+  },
+  {
+    "type": "competitor",
+    "summary": "Fitness competitor launched a New-Year hybrid-membership push with paid promotion language.",
+    "data": {
+      "cadence": "daily",
+      "themes": ["new year", "hybrid membership"],
+      "hooks": ["join now", "first month free"],
+      "gaps": ["no recovery classes"],
+      "recommendations": ["counter with a recovery-focused differentiator"],
+      "campaignSignal": true,
+      "signalSummary": "promo language and post burst indicate a membership campaign"
+    },
+    "citations": ["https://example.com/competitor-fitness"]
+  },
+  {
+    "type": "competitor",
+    "summary": "Local bakery rival is quiet; occasional posts, no offers or launch signals.",
+    "data": {
+      "cadence": "monthly",
+      "themes": ["seasonal"],
+      "hooks": [],
+      "gaps": ["no online ordering", "no dietary messaging"],
+      "recommendations": ["own allergen-free custom cakes online"],
+      "campaignSignal": false,
+      "signalSummary": "no campaign detected"
+    },
+    "citations": ["https://example.com/competitor-bakery-1", "https://example.com/competitor-bakery-2"]
+  }
+]
