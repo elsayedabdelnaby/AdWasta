@@ -1,118 +1,12 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
+    <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AdWasta — Approvals (thin UI)</title>
-    <style>
-      body { font-family: system-ui, sans-serif; margin: 0; background: #f6f6f4; color: #1a1a1a; }
-      header { background: #2a2a28; color: #fff; padding: 12px 20px; }
-      main { max-width: 860px; margin: 0 auto; padding: 20px; }
-      .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
-      label { display: block; font-size: 13px; color: #555; margin-top: 8px; }
-      input, textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; }
-      button { padding: 8px 14px; border: 0; border-radius: 6px; background: #3a6; color: #fff; cursor: pointer; margin-right: 6px; }
-      button.secondary { background: #888; }
-      button.reject { background: #c44; }
-      pre { background: #f0f0ee; padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
-      .muted { color: #888; font-size: 13px; }
-      .row { display: flex; gap: 8px; align-items: center; }
-    </style>
+    <title>AdWasta — Control Plane</title>
   </head>
   <body>
-    <header><strong>AdWasta</strong> — thin approval UI (R1, dev)</header>
-    <main>
-      <div class="card">
-        <div class="row">
-          <div style="flex:1"><label>API base</label><input id="api" value="http://localhost:3001" /></div>
-          <div style="flex:1"><label>Dev user (x-dev-user)</label><input id="user" value="demo-owner" /></div>
-        </div>
-        <label>Tenant ID</label>
-        <div class="row"><input id="tenant" placeholder="paste a tenant id, or create one →" /><button onclick="createTenant()">Create tenant</button></div>
-      </div>
-
-      <div class="card">
-        <h3>Onboard</h3>
-        <label>Description</label><input id="desc" value="Specialty coffee roaster" />
-        <label>Brand voice</label><input id="voice" value="warm, unpretentious" />
-        <button onclick="onboard()">Save profile</button>
-        <button class="secondary" onclick="recommend()">Generate drafts</button>
-        <span id="msg" class="muted"></span>
-      </div>
-
-      <div class="card">
-        <h3>Approval inbox</h3>
-        <div id="inbox" class="muted">nothing loaded — click “Generate drafts”.</div>
-      </div>
-
-      <div class="card">
-        <h3>Observability</h3>
-        <div class="row">
-          <button class="secondary" onclick="loadCost()">Cost</button>
-          <button class="secondary" onclick="loadActivity()">Activity</button>
-          <button class="secondary" onclick="loadTraces()">Traces</button>
-          <button class="secondary" onclick="loadPerformance()">Performance</button>
-        </div>
-        <pre id="obs" class="muted">—</pre>
-      </div>
-    </main>
-
-    <script>
-      const $ = (id) => document.getElementById(id);
-      const api = () => $('api').value.replace(/\/$/, '');
-      const headers = () => ({ 'content-type': 'application/json', 'x-dev-user': $('user').value });
-      const say = (m) => ($('msg').textContent = m);
-
-      async function req(method, path, body) {
-        const res = await fetch(api() + path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
-        if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-        return res.status === 200 || res.status === 201 || res.status === 202 ? res.json() : {};
-      }
-
-      async function createTenant() {
-        try { const r = await req('POST', '/tenants', { name: 'Demo Co', industry: 'coffee' }); $('tenant').value = r.id; say('tenant created'); }
-        catch (e) { say(String(e)); }
-      }
-      async function onboard() {
-        try { await req('POST', `/tenants/${$('tenant').value}/onboard`, { description: $('desc').value, voice: $('voice').value }); say('profile saved'); }
-        catch (e) { say(String(e)); }
-      }
-      async function recommend() {
-        try { const r = await req('POST', `/tenants/${$('tenant').value}/content/recommend`, { platforms: ['facebook'] }); say(`${r.draftIds.length} drafts created`); loadInbox(); }
-        catch (e) { say(String(e)); }
-      }
-      async function decide(approvalId, decision) {
-        try { await req('POST', `/tenants/${$('tenant').value}/approvals/${approvalId}/decide`, { decision }); loadInbox(); }
-        catch (e) { say(String(e)); }
-      }
-      async function copyPack(draftId) {
-        try { const p = await req('GET', `/tenants/${$('tenant').value}/content/${draftId}/copy-pack`); alert(JSON.stringify(p, null, 2)); }
-        catch (e) { say(String(e)); }
-      }
-      async function markPublished(draftId) {
-        try { await req('POST', `/tenants/${$('tenant').value}/published-items`, { draftId, platform: 'facebook' }); say('marked published'); }
-        catch (e) { say(String(e)); }
-      }
-      const showObs = (o) => ($('obs').textContent = JSON.stringify(o, null, 2));
-      async function loadCost() { try { showObs(await req('GET', `/tenants/${$('tenant').value}/metrics`)); } catch (e) { showObs(String(e)); } }
-      async function loadActivity() { try { showObs(await req('GET', `/tenants/${$('tenant').value}/events`)); } catch (e) { showObs(String(e)); } }
-      async function loadTraces() { try { showObs(await req('GET', `/tenants/${$('tenant').value}/traces`)); } catch (e) { showObs(String(e)); } }
-      async function loadPerformance() { try { showObs(await req('GET', `/tenants/${$('tenant').value}/performance`)); } catch (e) { showObs(String(e)); } }
-      async function loadInbox() {
-        try {
-          const r = await req('GET', `/tenants/${$('tenant').value}/approvals`);
-          const items = r.all || [];
-          $('inbox').innerHTML = items.length
-            ? items.map((it) => `<div class="card"><div class="row"><strong>${it.kind}</strong> <span class="muted">${it.risk} · ${it.status}</span></div>
-                <div class="row">
-                  <button onclick="decide('${it.id}','approve')">Approve</button>
-                  <button class="reject" onclick="decide('${it.id}','reject')">Reject</button>
-                  <button class="secondary" onclick="copyPack('${it.resourceId}')">Copy pack</button>
-                  <button class="secondary" onclick="markPublished('${it.resourceId}')">Mark published</button>
-                </div></div>`).join('')
-            : '<span class="muted">inbox empty</span>';
-        } catch (e) { $('inbox').textContent = String(e); }
-      }
-    </script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
