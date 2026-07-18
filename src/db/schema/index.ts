@@ -7,3 +7,6 @@ export * from './audit-log.js';
 export * from './agent-traces.js';
 export * from './jobs.js';
 export * from './campaign-runs.js';
+export * from './intel-snapshots.js';
+export * from './intel-watermarks.js';
+export * from './competitors.js';

@@ -36,6 +36,20 @@
       "when": 1784334162554,
       "tag": "0004_campaign_runs_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1784334816128,
+      "tag": "0005_intel_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784334816727,
+      "tag": "0006_intel_rls",
+      "breakpoints": true
     }
   ]
 }
