@@ -1,0 +1,32 @@
+[
+  {
+    "type": "plan",
+    "summary": "Aurora Coffee 90-day plan.",
+    "data": {
+      "horizonDays": 90,
+      "channels": ["email", "social"],
+      "themes": ["local community", "seasonal menu", "loyalty"],
+      "kpis": [
+        { "name": "local reach", "class": "awareness" },
+        { "name": "post engagement rate", "class": "engagement" },
+        { "name": "loyalty signups", "class": "conversion" }
+      ]
+    },
+    "citations": []
+  },
+  {
+    "type": "plan",
+    "summary": "B2B SaaS 90-day plan.",
+    "data": {
+      "horizonDays": 90,
+      "channels": ["email", "social"],
+      "themes": ["thought leadership", "consolidation ROI"],
+      "kpis": [
+        { "name": "site traffic", "class": "traffic" },
+        { "name": "demo signups", "class": "conversion" },
+        { "name": "newsletter opens", "class": "email" }
+      ]
+    },
+    "citations": []
+  }
+]

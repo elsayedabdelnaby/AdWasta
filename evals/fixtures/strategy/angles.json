@@ -1,0 +1,26 @@
+[
+  {
+    "type": "angles",
+    "summary": "Aurora Coffee angles (3+).",
+    "data": {
+      "angles": [
+        { "channel": "social", "angle": "hyper-local sourcing story", "hooks": ["meet your roaster"], "proofPoints": ["single-origin partners"] },
+        { "channel": "email", "angle": "loyalty perks for regulars", "hooks": ["your 10th is on us"], "proofPoints": ["member-only pricing"] },
+        { "channel": "social", "angle": "seasonal menu drops", "hooks": ["back for summer"], "proofPoints": ["limited runs"] }
+      ]
+    },
+    "citations": []
+  },
+  {
+    "type": "angles",
+    "summary": "B2B SaaS angles (3+).",
+    "data": {
+      "angles": [
+        { "channel": "email", "angle": "consolidate your tool stack", "hooks": ["replace five tools with one"], "proofPoints": ["case study: 40% cost cut"] },
+        { "channel": "social", "angle": "ROI you can defend", "hooks": ["show finance the numbers"], "proofPoints": ["ROI calculator"] },
+        { "channel": "email", "angle": "security-first onboarding", "hooks": ["SOC2 from day one"], "proofPoints": ["compliance docs"] }
+      ]
+    },
+    "citations": []
+  }
+]

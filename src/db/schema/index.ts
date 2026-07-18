@@ -10,3 +10,8 @@ export * from './campaign-runs.js';
 export * from './intel-snapshots.js';
 export * from './intel-watermarks.js';
 export * from './competitors.js';
+export * from './icp-profiles.js';
+export * from './personas.js';
+export * from './messaging-angles.js';
+export * from './marketing-plans.js';
+export * from './campaigns.js';

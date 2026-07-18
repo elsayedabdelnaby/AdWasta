@@ -50,6 +50,20 @@
       "when": 1784334816727,
       "tag": "0006_intel_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784338444948,
+      "tag": "0007_strategy_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784338445540,
+      "tag": "0008_strategy_rls",
+      "breakpoints": true
     }
   ]
 }

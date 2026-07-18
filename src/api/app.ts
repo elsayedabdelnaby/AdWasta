@@ -17,6 +17,7 @@ import { registerJobRoutes } from './routes/jobs.js';
 import { registerTraceRoutes } from './routes/traces.js';
 import { registerEventRoutes } from './routes/events.js';
 import { registerIntelRoutes, type ResearchProviders } from './routes/intel.js';
+import { registerStrategyRoutes } from './routes/strategy.js';
 import { LlmClient } from '../llm/openrouter.js';
 import { BraveSearchProvider, FixtureSearchProvider } from '../tools/search-web.js';
 import { modelTiersFromConfig } from '../config/model-routing.js';
@@ -110,6 +111,7 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
     models: modelTiersFromConfig(config),
   };
   registerIntelRoutes(app, { db, hooks, providers: research });
+  registerStrategyRoutes(app, { db, hooks, providers: research });
   if (deps.jobQueue) {
     registerJobRoutes(app, { db, hooks, queue: deps.jobQueue });
   }

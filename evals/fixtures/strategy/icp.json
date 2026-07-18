@@ -1,0 +1,24 @@
+[
+  {
+    "type": "icp",
+    "summary": "Aurora Coffee (b2c) ICP — local specialty-coffee drinkers.",
+    "data": {
+      "audienceModel": "b2c",
+      "segments": ["local cafe-goers", "remote workers", "weekend explorers"],
+      "triggers": ["new morning routine", "just moved to the area", "seeking a work-friendly spot"],
+      "objections": ["price vs chains", "habitual loyalty to current cafe", "distance"]
+    },
+    "citations": []
+  },
+  {
+    "type": "icp",
+    "summary": "Mid-market SaaS (b2b) ICP — operations teams consolidating tools.",
+    "data": {
+      "audienceModel": "b2b",
+      "segments": ["mid-market operations teams", "RevOps leaders"],
+      "triggers": ["tool sprawl", "annual budget cycle", "new ops leadership"],
+      "objections": ["switching cost", "security/procurement review", "integration risk"]
+    },
+    "citations": []
+  }
+]

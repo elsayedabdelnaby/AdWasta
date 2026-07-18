@@ -1,0 +1,25 @@
+[
+  {
+    "type": "personas",
+    "summary": "Aurora Coffee personas (3).",
+    "data": {
+      "personas": [
+        { "name": "Commuter Chris", "description": "grabs coffee on the way to work" },
+        { "name": "Remote Riley", "description": "works from cafes midweek" },
+        { "name": "Weekend Wanderer", "description": "explores new spots on weekends" }
+      ]
+    },
+    "citations": []
+  },
+  {
+    "type": "personas",
+    "summary": "B2B SaaS personas (2).",
+    "data": {
+      "personas": [
+        { "name": "Ops Manager Morgan", "description": "owns tooling decisions" },
+        { "name": "IT Reviewer Sam", "description": "gatekeeps security and procurement" }
+      ]
+    },
+    "citations": []
+  }
+]
