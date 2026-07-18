@@ -15,6 +15,9 @@ export const jobs = pgTable(
     status: text('status').notNull().default('queued'), // queued | running | completed | failed
     result: jsonb('result').$type<Record<string, unknown> | null>(),
     error: text('error'),
+    // Memory (design §5): short-term = the arm's turn buffer; working = job-scoped scratch.
+    shortTerm: jsonb('short_term').$type<unknown[]>().notNull().default([]),
+    workingMemory: jsonb('working_memory').$type<Record<string, unknown>>().notNull().default({}),
     traceId: uuid('trace_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

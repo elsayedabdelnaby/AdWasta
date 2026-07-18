@@ -6,3 +6,4 @@ export * from './system-events.js';
 export * from './audit-log.js';
 export * from './agent-traces.js';
 export * from './jobs.js';
+export * from './campaign-runs.js';

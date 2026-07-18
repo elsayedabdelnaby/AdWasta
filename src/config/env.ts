@@ -29,6 +29,10 @@ const EnvSchema = z.object({
   WORKOS_COOKIE_PASSWORD: z.string().optional(),
 
   OPENROUTER_API_KEY: z.string().optional(),
+  OPENROUTER_BASE_URL: z.string().default('https://openrouter.ai/api/v1'),
+  MODEL_FAST: z.string().default('openai/gpt-4o-mini'),
+  MODEL_BALANCED: z.string().default('openai/gpt-4o'),
+  MODEL_DEEP: z.string().default('anthropic/claude-sonnet-4'),
   BRAVE_API_KEY: z.string().optional(),
   TAVILY_API_KEY: z.string().optional(),
 
