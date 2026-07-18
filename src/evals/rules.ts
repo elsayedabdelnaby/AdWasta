@@ -98,3 +98,24 @@ export const creationRules: EvalRule[] = [
     check: (s) => typeof s.data.imageCount === 'number' && (s.data.imageCount as number) >= 1,
   },
 ];
+
+export const measureRules: EvalRule[] = [
+  {
+    // Every insight cites post_metrics rows (design §12.2 non-negotiable).
+    name: 'insight-cites-metric-rows',
+    applies: (s) => s.type === 'insight',
+    check: (s) => isNonEmptyArray(s.citations),
+  },
+  {
+    // Below the min sample MUST be provisional (and thus excluded downstream).
+    name: 'below-sample-is-provisional',
+    applies: (s) => s.type === 'insight' && typeof s.data.n === 'number' && (s.data.n as number) < 5,
+    check: (s) => s.data.provisional === true,
+  },
+  {
+    // A sufficient sample must NOT be provisional.
+    name: 'sufficient-sample-not-provisional',
+    applies: (s) => s.type === 'insight' && typeof s.data.n === 'number' && (s.data.n as number) >= 5,
+    check: (s) => s.data.provisional === false,
+  },
+];

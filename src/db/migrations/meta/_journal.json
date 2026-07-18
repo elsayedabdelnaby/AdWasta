@@ -78,6 +78,20 @@
       "when": 1784339211190,
       "tag": "0010_creation_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1784340091680,
+      "tag": "0011_measure_schema",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1784340092274,
+      "tag": "0012_measure_rls",
+      "breakpoints": true
     }
   ]
 }

@@ -8,6 +8,7 @@ import { personas as personasTable } from '../../db/schema/personas.js';
 import { messagingAngles } from '../../db/schema/messaging-angles.js';
 import { marketingPlans } from '../../db/schema/marketing-plans.js';
 import { emitEvent } from '../../observability/events.js';
+import { loadPerformanceContext } from '../../metrics/feedback.js';
 import type { ArmResult } from '../../harness/types.js';
 import {
   ICPSchema,
@@ -79,9 +80,10 @@ export async function generateStrategy(
     );
   });
 
-  // 3) Angles (read personas + competitor hooks)
+  // 3) Angles (read personas + competitor hooks + measured performance)
   const personaContext = personasOut.personas.map((p) => `${p.name}: ${p.description}`).join('\n');
-  const anglesOut = await deps.llm.structuredComplete({ model, schema: AnglesSchema, trace: deps.trace, messages: buildAnglesMessages(personaContext, competitorHooks) });
+  const performance = await loadPerformanceContext(deps.db, tenantId);
+  const anglesOut = await deps.llm.structuredComplete({ model, schema: AnglesSchema, trace: deps.trace, messages: buildAnglesMessages(personaContext, competitorHooks, performance) });
   const angleIds = await deps.db.withTenant(tenantId, async (tx) => {
     // Retire the previous run's angles so only the current strategy is active.
     await tx

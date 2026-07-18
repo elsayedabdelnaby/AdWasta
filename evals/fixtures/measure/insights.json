@@ -1,0 +1,50 @@
+[
+  {
+    "type": "insight",
+    "summary": "Winning angle: local sourcing — mean engagement 20.0% over 6 items.",
+    "data": { "kind": "winning_angle", "angleId": "a1", "n": 6, "mean": 0.2, "provisional": false },
+    "citations": ["m1", "m2", "m3", "m4", "m5", "m6"]
+  },
+  {
+    "type": "insight",
+    "summary": "Losing angle: generic promo — mean engagement 1.0% over 5 items.",
+    "data": { "kind": "losing_angle", "angleId": "a2", "n": 5, "mean": 0.01, "provisional": false },
+    "citations": ["m7", "m8", "m9", "m10", "m11"]
+  },
+  {
+    "type": "insight",
+    "summary": "Loyalty angle — mean engagement 12.0% over 5 items.",
+    "data": { "kind": "angle", "angleId": "a3", "n": 5, "mean": 0.12, "provisional": false },
+    "citations": ["m12", "m13", "m14", "m15", "m16"]
+  },
+  {
+    "type": "insight",
+    "summary": "Seasonal angle (provisional — only 2 items, below the min sample).",
+    "data": { "kind": "angle", "angleId": "a4", "n": 2, "mean": 0.05, "provisional": true },
+    "citations": ["m17", "m18"]
+  },
+  {
+    "type": "insight",
+    "summary": "New hook test (provisional — 3 items).",
+    "data": { "kind": "angle", "angleId": "a5", "n": 3, "mean": 0.08, "provisional": true },
+    "citations": ["m19", "m20", "m21"]
+  },
+  {
+    "type": "insight",
+    "summary": "Winning format: short video — 18.0% over 7 items.",
+    "data": { "kind": "format", "angleId": "f1", "n": 7, "mean": 0.18, "provisional": false },
+    "citations": ["m22", "m23", "m24", "m25", "m26", "m27", "m28"]
+  },
+  {
+    "type": "insight",
+    "summary": "Timing: weekday mornings outperform — 15.0% over 5 items.",
+    "data": { "kind": "timing", "angleId": "t1", "n": 5, "mean": 0.15, "provisional": false },
+    "citations": ["m29", "m30", "m31", "m32", "m33"]
+  },
+  {
+    "type": "insight",
+    "summary": "Email subject A/B (provisional — 4 items).",
+    "data": { "kind": "angle", "angleId": "e1", "n": 4, "mean": 0.22, "provisional": true },
+    "citations": ["m34", "m35", "m36", "m37"]
+  }
+]

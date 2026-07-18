@@ -74,10 +74,10 @@ export function buildPersonasMessages(icpSummary: string): ChatMessage[] {
   ];
 }
 
-export function buildAnglesMessages(personaContext: string, competitorHooks: string): ChatMessage[] {
+export function buildAnglesMessages(personaContext: string, competitorHooks: string, performance = ''): ChatMessage[] {
   return [
-    { role: 'system', content: `${SYSTEM} Produce at least 3 positioning angles with hooks and proof points, per channel (social and email). Differentiate from competitor hooks — do not copy them. Return JSON: {angles:[{channel, angle, hooks[], proofPoints[]}]}.` },
-    { role: 'user', content: `Personas:\n${personaContext}\n\nCompetitor hooks to differentiate from:\n${competitorHooks}` },
+    { role: 'system', content: `${SYSTEM} Produce at least 3 positioning angles with hooks and proof points, per channel (social and email). Differentiate from competitor hooks — do not copy them. Lean into what has measurably worked. Return JSON: {angles:[{channel, angle, hooks[], proofPoints[]}]}.` },
+    { role: 'user', content: `Personas:\n${personaContext}\n\nCompetitor hooks to differentiate from:\n${competitorHooks}${performance ? `\n\n${performance}` : ''}` },
   ];
 }
 

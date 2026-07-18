@@ -13,6 +13,7 @@ import { approvalQueue } from '../../db/schema/approval-queue.js';
 import { emitEvent } from '../../observability/events.js';
 import type { ImageAdapter } from '../../adapters/image/types.js';
 import { applyUtm } from './utm.js';
+import { loadPerformanceContext } from '../../metrics/feedback.js';
 import { ContentSchema, buildContentMessages, type DraftData } from './prompts.js';
 
 export interface ContentDeps {
@@ -63,10 +64,12 @@ export async function recommendContent(
       voice: profile?.voice ?? undefined,
       planStr: plan ? `themes: ${plan.themes.join(', ')}; channels: ${plan.channels.join(', ')}` : '(no plan)',
       anglesStr: angles.map((a) => `[${a.channel}] ${a.angle}`).join('\n'),
+      angleList: angles.map((a) => ({ id: a.id, channel: a.channel })),
       intelStr: intel.map((i) => i.summary).join('\n'),
     };
   });
 
+  const performance = await loadPerformanceContext(deps.db, tenantId);
   const out = await deps.llm.structuredComplete({
     model: routeModel('balanced', deps.models),
     schema: ContentSchema,
@@ -79,6 +82,7 @@ export async function recommendContent(
       platforms,
       isCounter: Boolean(opts.responseToAlertId),
       alertSummary: opts.alertSummary,
+      performance,
     }),
   });
 
@@ -90,7 +94,7 @@ export async function recommendContent(
   let imageCount = 0;
 
   for (const draft of drafts) {
-    const draftId = await persistDraft(deps.db, tenantId, draft, opts);
+    const draftId = await persistDraft(deps.db, tenantId, draft, opts, ctx.angleList);
     draftIds.push(draftId);
 
     // Visual brief: always for social; email hero when provided.
@@ -170,7 +174,16 @@ async function capPerChannel(db: Db, tenantId: string, drafts: DraftData[], capp
   return kept;
 }
 
-async function persistDraft(db: Db, tenantId: string, draft: DraftData, opts: RecommendOpts): Promise<string> {
+async function persistDraft(
+  db: Db,
+  tenantId: string,
+  draft: DraftData,
+  opts: RecommendOpts,
+  angleList: { id: string; channel: string }[],
+): Promise<string> {
+  // Link the draft to an active angle for its channel so MEASURE can group by
+  // angle (the feedback loop is inert otherwise).
+  const angleId = angleList.find((a) => a.channel === draft.channel)?.id ?? angleList[0]?.id;
   return db.withTenant(tenantId, async (tx) => {
     const [row] = await tx
       .insert(contentDrafts)
@@ -178,6 +191,7 @@ async function persistDraft(db: Db, tenantId: string, draft: DraftData, opts: Re
         tenantId,
         campaignId: opts.campaignId,
         responseToAlertId: opts.responseToAlertId,
+        angleId,
         channel: draft.channel,
         platform: draft.platform,
         subject: draft.subject,

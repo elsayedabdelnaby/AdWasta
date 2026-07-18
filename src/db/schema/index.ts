@@ -19,3 +19,5 @@ export * from './content-drafts.js';
 export * from './visual-briefs.js';
 export * from './generated-assets.js';
 export * from './approval-queue.js';
+export * from './post-metrics.js';
+export * from './performance-insights.js';

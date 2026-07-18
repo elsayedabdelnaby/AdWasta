@@ -32,6 +32,7 @@ export function buildContentMessages(ctx: {
   platforms: string[];
   isCounter: boolean;
   alertSummary?: string;
+  performance?: string;
 }): ChatMessage[] {
   const counter = ctx.isCounter
     ? `This is a COUNTER campaign responding to a competitor. Their move: ${ctx.alertSummary ?? ''}. Differentiate — do not copy them.`
@@ -48,7 +49,8 @@ export function buildContentMessages(ctx: {
     {
       role: 'user',
       content:
-        `Brand voice: ${ctx.voice ?? 'friendly, clear'}.\n${counter}\n\nPlan:\n${ctx.plan}\n\nMessaging angles:\n${ctx.angles}\n\nIntel:\n${ctx.intel}`,
+        `Brand voice: ${ctx.voice ?? 'friendly, clear'}.\n${counter}\n\nPlan:\n${ctx.plan}\n\nMessaging angles:\n${ctx.angles}\n\nIntel:\n${ctx.intel}` +
+        (ctx.performance ? `\n\n${ctx.performance}` : ''),
     },
   ];
 }

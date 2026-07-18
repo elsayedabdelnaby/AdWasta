@@ -73,6 +73,7 @@ describe('CREATION pillar (Tasks 3.1–3.8)', () => {
     const social = rows.drafts.find((d) => d.channel === 'social')!;
     expect(social.body).toContain('utm_campaign='); // UTM always on
     expect(social.body).toContain('utm_content=');
+    expect(social.angleId).toBeTruthy(); // linked to an angle so MEASURE can group
     expect(rows.briefs.length).toBeGreaterThanOrEqual(1); // visual brief always for social
     expect(rows.assets).toHaveLength(1);
   });
