@@ -42,6 +42,18 @@ const EnvSchema = z.object({
   // Self-hosted SearXNG instance (keyless). e.g. http://searxng:8080
   SEARXNG_URL: z.string().optional(),
 
+  // Image generation (Phase 3, ADR-003). Optional: with no key the app falls
+  // back to the placeholder stub adapter. GEMINI_API_KEY is preferred; the SDK
+  // also accepts the GOOGLE_AI_API_KEY name.
+  GEMINI_API_KEY: z.string().optional(),
+  GOOGLE_AI_API_KEY: z.string().optional(),
+  // Strip an inline "# comment" / trailing whitespace some .env parsers leave in
+  // place, so a model like "gemini-3-pro-image   # ~$0.13" resolves cleanly.
+  IMAGE_GEN_MODEL: z
+    .string()
+    .default('gemini-2.5-flash-image')
+    .transform((v) => v.split('#')[0]!.trim().split(/\s+/)[0] || 'gemini-2.5-flash-image'),
+
   DAILY_BUDGET_USD: z.coerce.number().nonnegative().default(10),
   MONTHLY_BUDGET_USD: z.coerce.number().nonnegative().default(50),
   MAX_RUN_COST_USD: z.coerce.number().nonnegative().default(2),

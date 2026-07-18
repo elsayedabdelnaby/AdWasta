@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { ChatMessage } from '../../llm/openrouter.js';
 
-export const PROMPT_VERSION = 'trend@1.0.0';
+export const PROMPT_VERSION = 'trend@1.1.0';
 
 export const TrendSchema = z.object({
   trends: z
@@ -12,7 +12,7 @@ export const TrendSchema = z.object({
 export type TrendData = z.infer<typeof TrendSchema>;
 
 export function buildTrendMessages(
-  profile: { industry?: string; audience?: string },
+  profile: { industry?: string; audience?: string; description?: string },
   sanitizedContext: string,
 ): ChatMessage[] {
   return [
@@ -25,7 +25,9 @@ export function buildTrendMessages(
     },
     {
       role: 'user',
-      content: `Industry: ${profile.industry ?? 'unknown'}. Audience: ${profile.audience ?? 'unknown'}.\n\nContext:\n${sanitizedContext}`,
+      content:
+        `Industry: ${profile.industry ?? 'unknown'}. Audience: ${profile.audience ?? 'unknown'}.\n` +
+        `Business description: ${profile.description ?? 'unknown'}.\n\nContext:\n${sanitizedContext}`,
     },
   ];
 }

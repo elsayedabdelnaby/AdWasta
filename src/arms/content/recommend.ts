@@ -2,7 +2,7 @@ import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
 import { LlmClient, type StepSink } from '../../llm/openrouter.js';
 import { routeModel, type ModelTiers } from '../../config/model-routing.js';
-import { tenantProfiles } from '../../db/schema/tenants.js';
+import { tenants, tenantProfiles } from '../../db/schema/tenants.js';
 import { marketingPlans } from '../../db/schema/marketing-plans.js';
 import { messagingAngles } from '../../db/schema/messaging-angles.js';
 import { intelSnapshots } from '../../db/schema/intel-snapshots.js';
@@ -14,7 +14,7 @@ import { emitEvent } from '../../observability/events.js';
 import type { ImageAdapter } from '../../adapters/image/types.js';
 import { applyUtm } from './utm.js';
 import { loadPerformanceContext } from '../../metrics/feedback.js';
-import { ContentSchema, buildContentMessages, type DraftData } from './prompts.js';
+import { ContentSchema, buildContentMessages, languageName, type DraftData } from './prompts.js';
 
 export interface ContentDeps {
   db: Db;
@@ -32,9 +32,15 @@ export interface RecommendOpts {
   platforms?: string[];
   imageGenEnabled?: boolean;
   maxVariants?: number;
+  /** Copy language ("ar", "Arabic", "fr", ...). Falls back to the tenant locale. */
+  language?: string;
 }
 
 export const MAX_DRAFTS_PER_CHANNEL_PER_DAY = 5;
+
+// Social platforms produced when neither the caller nor the tenant profile names
+// any. Keeps the proactive pipeline from silently collapsing to facebook-only.
+export const DEFAULT_PLATFORMS = ['facebook', 'instagram', 'twitter', 'linkedin'];
 
 export interface RecommendResult {
   draftIds: string[];
@@ -53,15 +59,22 @@ export async function recommendContent(
   tenantId: string,
   opts: RecommendOpts = {},
 ): Promise<RecommendResult> {
-  const platforms = opts.platforms ?? ['facebook'];
-
   const ctx = await deps.db.withTenant(tenantId, async (tx) => {
-    const [profile] = await tx.select({ voice: tenantProfiles.voice }).from(tenantProfiles).where(eq(tenantProfiles.tenantId, tenantId));
+    const [tenant] = await tx.select({ locale: tenants.locale, industry: tenants.industry }).from(tenants).where(eq(tenants.id, tenantId));
+    const [profile] = await tx
+      .select({ voice: tenantProfiles.voice, platforms: tenantProfiles.platforms, description: tenantProfiles.description, audience: tenantProfiles.audience })
+      .from(tenantProfiles)
+      .where(eq(tenantProfiles.tenantId, tenantId));
     const [plan] = await tx.select().from(marketingPlans).where(and(eq(marketingPlans.tenantId, tenantId), eq(marketingPlans.status, 'active'))).orderBy(desc(marketingPlans.createdAt)).limit(1);
     const angles = await tx.select().from(messagingAngles).where(and(eq(messagingAngles.tenantId, tenantId), eq(messagingAngles.status, 'active'))).limit(10);
     const intel = await tx.select({ summary: intelSnapshots.summary }).from(intelSnapshots).orderBy(desc(intelSnapshots.createdAt)).limit(5);
     return {
+      locale: tenant?.locale ?? 'en',
+      industry: tenant?.industry ?? undefined,
+      description: profile?.description ?? undefined,
+      audience: profile?.audience ?? undefined,
       voice: profile?.voice ?? undefined,
+      profilePlatforms: profile?.platforms ?? [],
       planStr: plan ? `themes: ${plan.themes.join(', ')}; channels: ${plan.channels.join(', ')}` : '(no plan)',
       anglesStr: angles.map((a) => `[${a.channel}] ${a.angle}`).join('\n'),
       angleList: angles.map((a) => ({ id: a.id, channel: a.channel })),
@@ -69,12 +82,28 @@ export async function recommendContent(
     };
   });
 
+  // Platform fan-out: explicit request → tenant profile → sensible default set.
+  // A social draft is produced per platform, so this drives which posts appear.
+  const platforms =
+    opts.platforms && opts.platforms.length > 0
+      ? opts.platforms
+      : ctx.profilePlatforms.length > 0
+        ? ctx.profilePlatforms
+        : DEFAULT_PLATFORMS;
+
+  // Copy language: explicit request → tenant locale → English (no instruction).
+  const langSource = opts.language?.trim() || (ctx.locale !== 'en' ? ctx.locale : undefined);
+  const language = langSource ? languageName(langSource) : undefined;
+
   const performance = await loadPerformanceContext(deps.db, tenantId);
   const out = await deps.llm.structuredComplete({
     model: routeModel('balanced', deps.models),
     schema: ContentSchema,
     trace: deps.trace,
     messages: buildContentMessages({
+      industry: ctx.industry,
+      description: ctx.description,
+      audience: ctx.audience,
       voice: ctx.voice,
       plan: ctx.planStr,
       angles: ctx.anglesStr,
@@ -83,6 +112,7 @@ export async function recommendContent(
       isCounter: Boolean(opts.responseToAlertId),
       alertSummary: opts.alertSummary,
       performance,
+      language,
     }),
   });
 
@@ -105,26 +135,41 @@ export async function recommendContent(
         tx.insert(visualBriefs).values({ tenantId, draftId, format: vb.format, mood: vb.mood, aspectRatio, prompt: vb.prompt }),
       );
 
-      // Optional image generation (Task 3.4).
+      // Optional image generation (Task 3.4). A provider failure (bad key, model,
+      // quota) must not sink the whole draft — the copy still goes to approval
+      // with its visual brief, so we swallow the error and record it as an event.
       if (opts.imageGenEnabled && deps.imageAdapter && draft.channel === 'social') {
-        const gen = await deps.imageAdapter.generate({
-          prompt: vb.prompt,
-          model: 'gemini-3-pro-image',
-          aspectRatio,
-          variants: Math.max(1, opts.maxVariants ?? 1),
-        });
-        // Split the batch cost across variants so a rollup sums to the real spend.
-        const perAssetCost = gen.assets.length > 0 ? gen.costUsd / gen.assets.length : 0;
-        await deps.db.withTenant(tenantId, async (tx) => {
-          for (const asset of gen.assets) {
-            const [row] = await tx
-              .insert(generatedAssets)
-              .values({ tenantId, draftId, url: asset.url, model: 'gemini-3-pro-image', prompt: vb.prompt, variantIndex: asset.variantIndex, costUsd: String(perAssetCost) })
-              .returning({ id: generatedAssets.id });
-            await tx.insert(approvalQueue).values({ tenantId, resourceType: 'generated_asset', resourceId: row!.id, kind: 'image', risk: 'MEDIUM' });
-            imageCount += 1;
-          }
-        });
+        try {
+          const gen = await deps.imageAdapter.generate({
+            prompt: vb.prompt,
+            model: 'gemini-3-pro-image',
+            aspectRatio,
+            variants: Math.max(1, opts.maxVariants ?? 1),
+          });
+          // Split the batch cost across variants so a rollup sums to the real spend.
+          const perAssetCost = gen.assets.length > 0 ? gen.costUsd / gen.assets.length : 0;
+          await deps.db.withTenant(tenantId, async (tx) => {
+            for (const asset of gen.assets) {
+              const [row] = await tx
+                .insert(generatedAssets)
+                .values({ tenantId, draftId, url: asset.url, model: 'gemini-3-pro-image', prompt: vb.prompt, variantIndex: asset.variantIndex, costUsd: String(perAssetCost) })
+                .returning({ id: generatedAssets.id });
+              await tx.insert(approvalQueue).values({ tenantId, resourceType: 'generated_asset', resourceId: row!.id, kind: 'image', risk: 'MEDIUM' });
+              imageCount += 1;
+            }
+          });
+        } catch (err) {
+          await deps.db.withTenant(tenantId, (tx) =>
+            emitEvent(tx, tenantId, {
+              actorType: 'crew',
+              category: 'campaign',
+              action: 'image.generation_failed',
+              resourceType: 'content_draft',
+              resourceId: draftId,
+              message: `image generation failed: ${err instanceof Error ? err.message : String(err)}`,
+            }),
+          );
+        }
       }
     }
 
@@ -148,28 +193,39 @@ export async function recommendContent(
   return { draftIds, imageCount, cappedChannels };
 }
 
+// Per-day cap, bucketed per social *platform* (facebook/instagram/…) so one busy
+// platform never starves the others. Email is its own bucket (design §25).
+function capBucket(channel: string, platform?: string | null): string {
+  return channel === 'social' && platform ? `social:${platform}` : channel;
+}
+
 async function capPerChannel(db: Db, tenantId: string, drafts: DraftData[], cappedChannels: string[]): Promise<DraftData[]> {
   const since = sql`date_trunc('day', now())`;
   const kept: DraftData[] = [];
-  const perChannelKept: Record<string, number> = {};
+  const perBucketKept: Record<string, number> = {};
   const existing = await db.withTenant(tenantId, (tx) =>
     tx
-      .select({ channel: contentDrafts.channel, n: sql<number>`count(*)::int` })
+      .select({ channel: contentDrafts.channel, platform: contentDrafts.platform, n: sql<number>`count(*)::int` })
       .from(contentDrafts)
       .where(gte(contentDrafts.createdAt, since))
-      .groupBy(contentDrafts.channel),
+      .groupBy(contentDrafts.channel, contentDrafts.platform),
   );
   const already: Record<string, number> = {};
-  for (const row of existing) already[row.channel] = row.n;
+  for (const row of existing) {
+    const b = capBucket(row.channel, row.platform);
+    already[b] = (already[b] ?? 0) + row.n;
+  }
 
   for (const d of drafts) {
-    const used = (already[d.channel] ?? 0) + (perChannelKept[d.channel] ?? 0);
+    const bucket = capBucket(d.channel, d.platform);
+    const used = (already[bucket] ?? 0) + (perBucketKept[bucket] ?? 0);
     if (used >= MAX_DRAFTS_PER_CHANNEL_PER_DAY) {
-      if (!cappedChannels.includes(d.channel)) cappedChannels.push(d.channel);
+      const label = d.channel === 'social' && d.platform ? `social (${d.platform})` : d.channel;
+      if (!cappedChannels.includes(label)) cappedChannels.push(label);
       continue;
     }
     kept.push(d);
-    perChannelKept[d.channel] = (perChannelKept[d.channel] ?? 0) + 1;
+    perBucketKept[bucket] = (perBucketKept[bucket] ?? 0) + 1;
   }
   return kept;
 }

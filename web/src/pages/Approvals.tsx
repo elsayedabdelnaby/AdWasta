@@ -15,6 +15,7 @@ interface Approval {
   status: string;
   createdAt: string;
 }
+interface Asset { id: string; url: string }
 interface Draft {
   id: string;
   channel: string;
@@ -24,6 +25,7 @@ interface Draft {
   body: string;
   status: string;
   campaignId: string | null;
+  assets: Asset[];
 }
 
 export default function Approvals() {
@@ -86,7 +88,11 @@ export default function Approvals() {
       <DataState resource={res}>
         {({ approvals, drafts }) => {
           const byId: Record<string, Draft> = {};
-          for (const d of drafts) byId[d.id] = d;
+          const assetById: Record<string, Asset> = {};
+          for (const d of drafts) {
+            byId[d.id] = d;
+            for (const a of d.assets ?? []) assetById[a.id] = a;
+          }
           const readyToPublish = drafts.filter((d) => d.status === 'approved');
           return (
             <div className="stack">
@@ -99,6 +105,7 @@ export default function Approvals() {
                       const draft = byId[a.resourceId];
                       const isEditing = editing[a.id];
                       const email = draft?.channel === 'email';
+                      const asset = a.resourceType === 'generated_asset' ? assetById[a.resourceId] : undefined;
                       return (
                         <div key={a.id} className="card" style={{ background: 'var(--bg-elev-2)' }}>
                           <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
@@ -122,7 +129,16 @@ export default function Approvals() {
                           ) : (
                             <>
                               {email && draft?.subject && <div style={{ marginBottom: 6 }}><strong>{draft.subject}</strong>{draft.preheader ? <span className="faint"> — {draft.preheader}</span> : null}</div>}
-                              <p style={{ whiteSpace: 'pre-wrap', margin: '0 0 12px' }}>{draft?.body ?? <span className="faint">draft {a.resourceId} not loaded</span>}</p>
+                              {asset ? (
+                                <img src={asset.url} alt="Generated visual" style={{ maxWidth: '100%', borderRadius: 8, marginBottom: 12, display: 'block' }} />
+                              ) : (
+                                <p style={{ whiteSpace: 'pre-wrap', margin: '0 0 12px' }}>{draft?.body ?? <span className="faint">draft {a.resourceId} not loaded</span>}</p>
+                              )}
+                              {!asset && draft?.assets && draft.assets.length > 0 && (
+                                <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                                  {draft.assets.map((im) => <img key={im.id} src={im.url} alt="Post visual" style={{ maxWidth: 240, borderRadius: 8 }} />)}
+                                </div>
+                              )}
                               <div className="row">
                                 <button className="primary" disabled={busy !== null || a.status !== 'pending'} onClick={() => decide(a, 'approve')}>Approve</button>
                                 <button className="danger" disabled={busy !== null || a.status !== 'pending'} onClick={() => decide(a, 'reject')}>Reject</button>
@@ -154,6 +170,11 @@ export default function Approvals() {
                         </div>
                         {d.subject && <div style={{ marginBottom: 4 }}><strong>{d.subject}</strong></div>}
                         <p style={{ whiteSpace: 'pre-wrap', margin: '0 0 10px' }}>{d.body}</p>
+                        {d.assets && d.assets.length > 0 && (
+                          <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+                            {d.assets.map((im) => <img key={im.id} src={im.url} alt="Post visual" style={{ maxWidth: 240, borderRadius: 8 }} />)}
+                          </div>
+                        )}
                         <div className="row">
                           <button disabled={busy !== null} onClick={() => copyPack(d.id)}>Copy pack</button>
                           <button className="primary" disabled={busy !== null} onClick={() => markPublished(d.id, d.platform)}>Mark published</button>

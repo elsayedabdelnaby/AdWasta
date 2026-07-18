@@ -12,6 +12,8 @@ import type { IntelArmDeps } from '../../arms/intel-arm.js';
 import { runMarketArm } from '../../arms/market/run.js';
 import { runTrendArm } from '../../arms/trends/run.js';
 import { runCompetitorArm } from '../../arms/competitors/run.js';
+import { discoverCompetitors } from '../../arms/competitors/discover.js';
+import { compareCompetitors } from '../../arms/competitors/compare.js';
 import { runResearchCrew } from '../../brain/research-orchestrator.js';
 
 export interface ResearchProviders {
@@ -82,6 +84,42 @@ export function registerIntelRoutes(
       );
       return Promise.all(comps.map((c) => runCompetitorArm(d, tenantId, c.id)));
     });
+  });
+
+  // The tenant's tracked competitors (watch table — what the arms analyze).
+  app.get('/tenants/:id/competitors', { preHandler: hooks.requireTenantMember }, async (req) => {
+    const rows = await db.withTenant(req.tenantId!, (tx) =>
+      tx
+        .select({
+          id: competitors.id,
+          name: competitors.name,
+          url: competitors.url,
+          watchEnabled: competitors.watchEnabled,
+          createdAt: competitors.createdAt,
+        })
+        .from(competitors)
+        .orderBy(desc(competitors.watchEnabled), competitors.name),
+    );
+    return { competitors: rows };
+  });
+
+  // DISCOVER competitors from the onboarded business profile (search + LLM),
+  // persisting new ones into the watch table.
+  app.post('/tenants/:id/intel/competitors/discover', { preHandler: hooks.requireTenantMember }, async (req) =>
+    withResearchTrace(req.tenantId!, (d) => discoverCompetitors(d, req.tenantId!)),
+  );
+
+  // COMPARE all watched competitors against each other and the client
+  // (studies any competitor that has never been analyzed first).
+  app.post('/tenants/:id/intel/competitors/compare', { preHandler: hooks.requireTenantMember }, async (req, reply) => {
+    try {
+      return await withResearchTrace(req.tenantId!, (d) => compareCompetitors(d, req.tenantId!));
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('no watched competitors')) {
+        return reply.code(409).send({ error: err.message });
+      }
+      throw err;
+    }
   });
 
   app.get('/tenants/:id/competitor-alerts', { preHandler: hooks.requireTenantMember }, async (req) => {

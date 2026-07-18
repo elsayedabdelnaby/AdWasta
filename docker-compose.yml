@@ -52,7 +52,10 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/marketing_agent
+      # App traffic MUST go through the non-superuser app_user role — a superuser
+      # silently bypasses every RLS policy (tenant isolation AND per-tenant caps).
+      DATABASE_URL: postgresql://app_user:app_user@db:5432/marketing_agent
+      DATABASE_ADMIN_URL: postgresql://postgres:postgres@db:5432/marketing_agent
       REDIS_URL: redis://redis:6379
       SEARXNG_URL: http://searxng:8080
       HOST: 0.0.0.0
@@ -74,7 +77,8 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/marketing_agent
+      DATABASE_URL: postgresql://app_user:app_user@db:5432/marketing_agent
+      DATABASE_ADMIN_URL: postgresql://postgres:postgres@db:5432/marketing_agent
       REDIS_URL: redis://redis:6379
     command: ["node", "-e", "console.log('BullMQ worker — wire in Phase 0 queue'); setInterval(() => {}, 60000)"]
     depends_on:

@@ -140,6 +140,45 @@ describe('RESEARCH arms (Tasks 1.2–1.4)', () => {
     expect(res.data.trends.length).toBeGreaterThan(0);
   });
 
+  it('trend arm searches with the onboarded business description and feeds it to the prompt', async () => {
+    const T4 = randomUUID();
+    await db.withTenant(T4, async (tx) => {
+      await tx.insert(tenants).values({ id: T4, name: 'Mehrab Alquran', industry: 'islamic decor' });
+      await tx.insert(tenantProfiles).values({
+        tenantId: T4,
+        audience: 'mosques and gift buyers',
+        description: 'Handcrafted mihrab and quran wall decor',
+      });
+    });
+    const queries: string[] = [];
+    const prompts: string[] = [];
+    const capturingTransport: LlmTransport = async ({ messages }) => {
+      prompts.push(messages.map((m) => m.content).join('\n'));
+      return { text: JSON.stringify(trendFixture), usage: { promptTokens: 10, completionTokens: 10 }, model: 'test-model' };
+    };
+    const d: IntelArmDeps = {
+      ...deps,
+      llm: new LlmClient({ transport: capturingTransport, sleep: async () => {} }),
+      search: {
+        search: async (q: string) => {
+          queries.push(q);
+          return { results: [{ title: 'Decor trends', url: 'https://ex.com/decor', snippet: 'wall decor demand up' }], citations: ['https://ex.com/decor'] };
+        },
+      },
+    };
+    try {
+      const res = await runTrendArm(d, T4);
+      expect(res.arm).toBe('trends');
+      expect(queries.some((q) => q.includes('Handcrafted mihrab and quran wall decor'))).toBe(true);
+      expect(prompts.join('\n')).toContain('Handcrafted mihrab and quran wall decor');
+    } finally {
+      await db.adminPool.query('DELETE FROM intel_snapshots WHERE tenant_id = $1', [T4]);
+      await db.adminPool.query('DELETE FROM system_events WHERE tenant_id = $1', [T4]);
+      await db.adminPool.query('DELETE FROM tenant_profiles WHERE tenant_id = $1', [T4]);
+      await db.adminPool.query('DELETE FROM tenants WHERE id = $1', [T4]);
+    }
+  });
+
   it('competitor arm analyzes and fires an alert on a detected campaign', async () => {
     const competitorId = await db.withTenant(T, async (tx) => {
       const [c] = await tx

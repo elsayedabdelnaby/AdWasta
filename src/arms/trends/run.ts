@@ -14,19 +14,26 @@ export async function runTrendArm(
   const ctx = await deps.db.withTenant(tenantId, async (tx) => {
     const [t] = await tx.select({ industry: tenants.industry }).from(tenants).where(eq(tenants.id, tenantId));
     const [p] = await tx
-      .select({ audience: tenantProfiles.audience })
+      .select({ audience: tenantProfiles.audience, description: tenantProfiles.description })
       .from(tenantProfiles)
       .where(eq(tenantProfiles.tenantId, tenantId));
-    return { industry: t?.industry ?? undefined, audience: p?.audience ?? undefined };
+    return {
+      industry: t?.industry ?? undefined,
+      audience: p?.audience ?? undefined,
+      description: p?.description ?? undefined,
+    };
   });
 
-  const query = [ctx.industry, ctx.audience, 'trends news this week'].filter(Boolean).join(' ');
+  // One query anchored on industry/audience, plus one derived from the onboarded
+  // business description (truncated — search engines choke on paragraph queries).
+  const queries = [[ctx.industry, ctx.audience, 'trends news this week'].filter(Boolean).join(' ')];
+  if (ctx.description) queries.push(`${ctx.description.slice(0, 160)} industry trends`);
 
   const { result } = await runIntelArm(deps, tenantId, {
     type: 'trend',
     arm: 'trends',
     tier: 'balanced',
-    queries: [query],
+    queries,
     schema: TrendSchema,
     buildMessages: (sanitized) => buildTrendMessages(ctx, sanitized),
     summarize: (d) => d.summary,

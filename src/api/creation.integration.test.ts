@@ -21,7 +21,11 @@ const contentFixture = {
   ],
 };
 
-const transport: LlmTransport = async () => ({ text: JSON.stringify(contentFixture), usage: { promptTokens: 5, completionTokens: 5 }, model: 'test' });
+const seenPrompts: string[] = [];
+const transport: LlmTransport = async ({ messages }) => {
+  seenPrompts.push(messages.map((m) => m.content).join('\n'));
+  return { text: JSON.stringify(contentFixture), usage: { promptTokens: 5, completionTokens: 5 }, model: 'test' };
+};
 
 const OWNER = 'user_owner';
 let app: FastifyInstance;
@@ -76,6 +80,28 @@ describe('CREATION pillar (Tasks 3.1–3.8)', () => {
     expect(social.angleId).toBeTruthy(); // linked to an angle so MEASURE can group
     expect(rows.briefs.length).toBeGreaterThanOrEqual(1); // visual brief always for social
     expect(rows.assets).toHaveLength(1);
+  });
+
+  it('writes copy in the requested language (and falls back to the tenant locale)', async () => {
+    // Explicit request language wins.
+    const id = await seedTenant();
+    seenPrompts.length = 0;
+    const res = await app.inject({ method: 'POST', url: `/tenants/${id}/content/recommend`, headers: { 'x-dev-user': OWNER }, payload: { platforms: ['facebook'], language: 'ar' } });
+    expect(res.statusCode).toBe(200);
+    expect(seenPrompts.join('\n')).toContain('in Arabic');
+
+    // No request language: the tenant's locale drives it.
+    const res2 = await app.inject({ method: 'POST', url: '/tenants', headers: { 'x-dev-user': OWNER }, payload: { name: 'Boulangerie', industry: 'bakery', locale: 'fr' } });
+    const frId = res2.json().id as string;
+    created.push(frId);
+    await db.withTenant(frId, async (tx) => {
+      await tx.insert(marketingPlans).values({ tenantId: frId, channels: ['social'], themes: ['artisan'], kpis: [] });
+      await tx.insert(messagingAngles).values({ tenantId: frId, channel: 'social', angle: 'fresh daily' });
+    });
+    seenPrompts.length = 0;
+    const res3 = await app.inject({ method: 'POST', url: `/tenants/${frId}/content/recommend`, headers: { 'x-dev-user': OWNER }, payload: { platforms: ['facebook'] } });
+    expect(res3.statusCode).toBe(200);
+    expect(seenPrompts.join('\n')).toContain('in French');
   });
 
   it('runs the approve loop → copy pack → mark published', async () => {

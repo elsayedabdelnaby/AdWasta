@@ -6,6 +6,7 @@ import type { Db } from '../../db/client.js';
 import type { AuthHooks } from '../../auth/hook.js';
 import { tenants, tenantProfiles } from '../../db/schema/tenants.js';
 import { memberships } from '../../db/schema/memberships.js';
+import { competitors } from '../../db/schema/competitors.js';
 import { emitEvent, emitAudit } from '../../observability/events.js';
 
 const CreateTenantSchema = z.object({
@@ -137,6 +138,32 @@ export function registerTenantRoutes(
             updatedAt: new Date(),
           },
         });
+      // The RESEARCH crew analyzes rows in the `competitors` watch table — the
+      // profile's name list alone is never read by the arms. Keep them in sync:
+      // add new names, re-enable returning ones, stop watching removed ones
+      // (never delete — alerts/snapshots cascade off these rows).
+      if (profile.competitors) {
+        const wanted = [...new Set(profile.competitors.map((n) => n.trim()).filter(Boolean))];
+        const wantedLower = new Set(wanted.map((n) => n.toLowerCase()));
+        const existing = await tx
+          .select({ id: competitors.id, name: competitors.name, watchEnabled: competitors.watchEnabled })
+          .from(competitors)
+          .where(eq(competitors.tenantId, tenantId));
+        const byName = new Map(existing.map((c) => [c.name.toLowerCase(), c]));
+        for (const name of wanted) {
+          const found = byName.get(name.toLowerCase());
+          if (!found) {
+            await tx.insert(competitors).values({ tenantId, name });
+          } else if (!found.watchEnabled) {
+            await tx.update(competitors).set({ watchEnabled: true, updatedAt: new Date() }).where(eq(competitors.id, found.id));
+          }
+        }
+        for (const c of existing) {
+          if (c.watchEnabled && !wantedLower.has(c.name.toLowerCase())) {
+            await tx.update(competitors).set({ watchEnabled: false, updatedAt: new Date() }).where(eq(competitors.id, c.id));
+          }
+        }
+      }
       await emitEvent(tx, tenantId, {
         actorType: 'user',
         actorId: userId,

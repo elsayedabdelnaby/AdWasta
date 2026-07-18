@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { Db } from '../../db/client.js';
 import type { AuthHooks } from '../../auth/hook.js';
@@ -43,6 +43,8 @@ export function registerContentRoutes(
     campaignId: z.string().uuid().optional(),
     responseToAlertId: z.string().uuid().optional(),
     alertSummary: z.string().optional(),
+    // Copy language ("ar", "Arabic", ...); defaults to the tenant locale.
+    language: z.string().max(40).optional(),
   });
 
   app.post('/tenants/:id/content/recommend', { preHandler: hooks.requireTenantMember }, async (req) => {
@@ -114,12 +116,19 @@ export function registerContentRoutes(
     return { published: true, id: result.item!.id };
   });
 
-  // List drafts (for the thin UI).
+  // List drafts (for the thin UI), each with any generated image assets attached
+  // so the approvals view can render the visual alongside the copy.
   app.get('/tenants/:id/content/drafts', { preHandler: hooks.requireTenantMember }, async (req) => {
     const tenantId = req.tenantId!;
-    const rows = await db.withTenant(tenantId, (tx) =>
-      tx.select().from(contentDrafts).where(eq(contentDrafts.tenantId, tenantId)).orderBy(desc(contentDrafts.createdAt)).limit(50),
-    );
-    return { drafts: rows };
+    return db.withTenant(tenantId, async (tx) => {
+      const rows = await tx.select().from(contentDrafts).where(eq(contentDrafts.tenantId, tenantId)).orderBy(desc(contentDrafts.createdAt)).limit(50);
+      const ids = rows.map((r) => r.id);
+      const assets = ids.length
+        ? await tx.select({ id: generatedAssets.id, draftId: generatedAssets.draftId, url: generatedAssets.url }).from(generatedAssets).where(inArray(generatedAssets.draftId, ids))
+        : [];
+      const byDraft: Record<string, { id: string; url: string }[]> = {};
+      for (const a of assets) (byDraft[a.draftId] ??= []).push({ id: a.id, url: a.url });
+      return { drafts: rows.map((r) => ({ ...r, assets: byDraft[r.id] ?? [] })) };
+    });
   });
 }

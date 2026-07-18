@@ -27,6 +27,8 @@ import { registerEngagementRoutes } from './routes/engagement.js';
 import { registerWebhookRoutes } from './routes/webhooks.js';
 import { deriveUnsubscribeSecret } from '../adapters/api/unsubscribe.js';
 import { StubImageAdapter } from '../adapters/image/stub.js';
+import { GeminiImageAdapter } from '../adapters/image/gemini.js';
+import { createGeminiImageClient } from '../adapters/image/gemini-client.js';
 import type { ImageAdapter } from '../adapters/image/types.js';
 import { LlmClient } from '../llm/openrouter.js';
 import {
@@ -56,6 +58,16 @@ export interface BuildAppDeps {
   research?: ResearchProviders;
   /** Image adapter for CREATION. Defaults to the stub (design §8.2). */
   imageAdapter?: ImageAdapter;
+}
+
+// Real Gemini image generation when a key is configured; otherwise the free
+// placeholder stub so the approval flow still works end-to-end (design §8.2).
+function buildImageAdapter(config: AppConfig): ImageAdapter {
+  const key = config.GEMINI_API_KEY?.trim() || config.GOOGLE_AI_API_KEY?.trim();
+  if (key) {
+    return new GeminiImageAdapter(createGeminiImageClient({ apiKey: key, model: config.IMAGE_GEN_MODEL }));
+  }
+  return new StubImageAdapter();
 }
 
 /**
@@ -138,7 +150,7 @@ export async function buildApp(deps: BuildAppDeps): Promise<FastifyInstance> {
   const contentProviders: ContentProviders = {
     llm: research.llm,
     models: research.models,
-    imageAdapter: deps.imageAdapter ?? new StubImageAdapter(),
+    imageAdapter: deps.imageAdapter ?? buildImageAdapter(config),
   };
   registerContentRoutes(app, { db, hooks, providers: contentProviders });
   registerApprovalRoutes(app, { db, hooks });

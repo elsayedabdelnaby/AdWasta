@@ -118,6 +118,46 @@ describe('Tenant CRUD + onboard (Task 0.3)', () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it('onboard syncs the competitor list into the competitors watch table', async () => {
+    const id = await createTenant(OWNER);
+    const first = await app.inject({
+      method: 'POST',
+      url: `/tenants/${id}/onboard`,
+      headers: { 'x-dev-user': OWNER },
+      payload: { description: 'coffee', competitors: ['Blue Bottle', 'Stumptown'] },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const rows1 = await db.adminPool.query(
+      'SELECT name, watch_enabled FROM competitors WHERE tenant_id = $1 ORDER BY name',
+      [id],
+    );
+    expect(rows1.rows).toEqual([
+      { name: 'Blue Bottle', watch_enabled: true },
+      { name: 'Stumptown', watch_enabled: true },
+    ]);
+
+    // Re-onboard with one removed and one added: removed stops being watched
+    // (row kept — alerts hang off it), added is inserted, kept stays enabled.
+    const second = await app.inject({
+      method: 'POST',
+      url: `/tenants/${id}/onboard`,
+      headers: { 'x-dev-user': OWNER },
+      payload: { description: 'coffee', competitors: ['Stumptown', 'New Rival'] },
+    });
+    expect(second.statusCode).toBe(200);
+
+    const rows2 = await db.adminPool.query(
+      'SELECT name, watch_enabled FROM competitors WHERE tenant_id = $1 ORDER BY name',
+      [id],
+    );
+    expect(rows2.rows).toEqual([
+      { name: 'Blue Bottle', watch_enabled: false },
+      { name: 'New Rival', watch_enabled: true },
+      { name: 'Stumptown', watch_enabled: true },
+    ]);
+  });
+
   it('onboard persists website and social page urls (fed to research context)', async () => {
     const id = await createTenant(OWNER);
     const res = await app.inject({
